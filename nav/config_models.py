@@ -1,51 +1,69 @@
+import numpy as np
 import random
 from typing import List, Literal, Optional, Union
 from pydantic import BaseModel, Field, model_validator
 
+PI = np.pi
+
+
 class Vector2(BaseModel):
-    x: float = Field(ge=0.0, le=1.0)
-    y: float = Field(ge=0.0, le=1.0)
+    x: float
+    y: float
+
+    def to_numpy(self):
+        return np.array([self.x, self.y])
+
 
 class AgentConfig(BaseModel):
     start_pos: Vector2
     goal_pos: Vector2
+    radius: float = 0.02
     max_speed: float
     preferred_speed: float
     spawn_time: float
-    agent_col: Optional[Literal["blue", "green", "yellow", "red"]] = None
+    agent_col: Literal["blue", "green", "yellow", "red"] = "blue"
 
-    @model_validator(mode='after')
-    def set_default_agent_col(self) -> 'AgentConfig':
-        if self.agent_col is None:
-            self.agent_col = random.choice(["blue", "green", "yellow", "red"])
-        return self
 
-class RectangleObstacle(BaseModel):
+class Rectangle(BaseModel):
+    type: Literal["rectangle"] = "rectangle"
     center: Vector2
     width: float
     height: float
+    rotation: float = 0  # Rotation in degrees
 
-class CircleObstacle(BaseModel):
+
+class Circle(BaseModel):
+    type: Literal["circle"] = "circle"
     center: Vector2
     radius: float
 
-class LineObstacle(BaseModel):
-    start: Vector2
-    end: Vector2
 
-class MovingObstacle(BaseModel):
-    obstacle: Union[RectangleObstacle, LineObstacle]
-    speed: float
-    direction: Vector2
-    spawn_time: float
-    angular_speed: float
-    rotating_up: bool
-    oscillation_time: float
+class ObstacleSchedule(BaseModel):
+    speed: Optional[float] = None
+    direction: Optional[Vector2] = None
+    spawn_time: Optional[float] = None
+    angular_speed: Optional[float] = None  # Angular speed in degrees per second
+    rotating_up: Optional[bool] = None
+    boundary_x_min: Optional[float] = None
+    boundary_x_max: Optional[float] = None
+
+
+class ObstacleConfig(BaseModel):
+    shape: Union[Rectangle, Circle]
+    schedule: Optional[ObstacleSchedule] = None
+
+
+class PolygonBoundaryConfig(BaseModel):
+    type: Literal["polygon"] = "polygon"
+    vertices: List[Vector2]
+
 
 class EnvConfig(BaseModel):
-    obstacles: List[Union[LineObstacle, CircleObstacle, RectangleObstacle, MovingObstacle]]
+    boundary: PolygonBoundaryConfig
+    obstacles: List[ObstacleConfig]
     agents: List[AgentConfig]
     max_time: int
+
 
 if __name__ == "__main__":
     vector2 = Vector2(x=0.4, y=0.6)
@@ -59,6 +77,3 @@ if __name__ == "__main__":
         preferred_speed=0.2,
         spawn_time=0,
     )
-
-    print(agent)
-
