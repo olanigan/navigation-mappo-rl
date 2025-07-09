@@ -7,6 +7,10 @@ from .utils import *
 
 
 class Obstacle(ABC):
+    def __init__(self, config: ObstacleConfig):
+        self.config = config
+        self.schedule = config.schedule
+
     @abstractmethod
     def check_collision(self, center, radius) -> bool:
         pass
@@ -31,15 +35,14 @@ class ObstacleFactory:
 
 class RectangleObstacle(Obstacle):
     def __init__(self, config: ObstacleConfig):
+        super().__init__(config)
         shape = config.shape
         if not isinstance(shape, Rectangle):
             return
-        self.config = config
         self.center = shape.center.to_numpy()
         self.width = shape.width
         self.height = shape.height
         self.rotation = shape.rotation
-        self.schedule = config.schedule
 
     def get_current_state(self):
         return Rectangle(
@@ -117,12 +120,12 @@ class RectangleObstacle(Obstacle):
 
 class CircleObstacle(Obstacle):
     def __init__(self, config: ObstacleConfig):
+        super().__init__(config)
         shape_config = config.shape
         if not isinstance(shape_config, Circle):
             return
         self.center = shape_config.center.to_numpy()
         self.radius = shape_config.radius
-        self.schedule = config.schedule
 
     def get_current_state(self):
         return Circle(
