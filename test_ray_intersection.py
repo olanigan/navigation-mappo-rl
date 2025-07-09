@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
+import time
 from nav.ray_intersection import *
 from nav.config_models import *
 from nav.obstacles import PolygonBoundary, CircleObstacle, RectangleObstacle
@@ -683,6 +684,1200 @@ def test_ray_length_vs_intersections():
         print(f"  Circle 3 (dist ~2.25): {'HIT' if result3.intersects else 'MISS'}")
 
 
+def test_batch_ray_circle_intersection():
+    """Test batch ray-circle intersection with multiple rays and circles"""
+    print("Testing batch ray-circle intersection")
+
+    # Create multiple rays in a fan pattern
+    num_rays = 8
+    ray_angles = np.linspace(-np.pi / 4, np.pi / 4, num_rays)
+    ray_origins = np.array([[0.0, 0.5] for _ in range(num_rays)])
+    ray_directions = np.array([[np.cos(angle), np.sin(angle)] for angle in ray_angles])
+    ray_lengths = np.full(num_rays, 2.5)
+
+    # Create rays array [N, 5] format
+    rays = np.column_stack(
+        [
+            ray_origins[:, 0],  # origin_x
+            ray_origins[:, 1],  # origin_y
+            ray_directions[:, 0],  # dir_x
+            ray_directions[:, 1],  # dir_y
+            ray_lengths,  # length
+        ]
+    )
+
+    # Create multiple circles
+    circles = np.array(
+        [
+            [1.0, 0.3, 0.2],  # [center_x, center_y, radius]
+            [1.5, 0.7, 0.15],
+            [2.0, 0.5, 0.25],
+            [0.8, 0.8, 0.1],
+        ]
+    )
+
+    # Test batch intersection
+    print("Running batch intersection...")
+    start_time = time.time()
+    batch_distances = batch_ray_circle_intersection(rays, circles)
+    batch_time = time.time() - start_time
+
+    # Compare with individual intersections
+    print("Running individual intersections for comparison...")
+    start_time = time.time()
+    individual_distances = np.full((num_rays, len(circles)), np.inf)
+
+    for i in range(num_rays):
+        ray = Ray(
+            origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+            direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+            length=rays[i, 4],
+        )
+
+        for j, circle_data in enumerate(circles):
+            circle = Circle(
+                center=Vector2(x=circle_data[0], y=circle_data[1]),
+                radius=circle_data[2],
+            )
+            result = ray_circle_intersection(ray, circle)
+            if result.intersects:
+                individual_distances[i, j] = result.t
+
+    individual_time = time.time() - start_time
+
+    # Check if results match
+    matches = np.allclose(batch_distances, individual_distances, rtol=1e-6)
+    print(f"Batch vs Individual results match: {matches}")
+    print(f"Batch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
+    print(f"Speedup: {individual_time/batch_time:.2f}x")
+
+    # Visualize results
+    fig, ax = setup_plot(
+        "Batch Ray-Circle Intersection", xlim=(-0.2, 2.8), ylim=(-0.2, 1.2)
+    )
+
+    # Plot rays
+    for i in range(num_rays):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+        ray_length = rays[i, 4]
+
+        ax.arrow(
+            ray_start[0],
+            ray_start[1],
+            ray_dir[0] * ray_length,
+            ray_dir[1] * ray_length,
+            head_width=0.02,
+            head_length=0.03,
+            fc="blue",
+            ec="blue",
+            alpha=0.7,
+        )
+
+    # Plot circles
+    for circle_data in circles:
+        circle_patch = patches.Circle(
+            (circle_data[0], circle_data[1]),
+            circle_data[2],
+            facecolor="red",
+            edgecolor="darkred",
+            alpha=0.3,
+            linewidth=2,
+        )
+        ax.add_patch(circle_patch)
+
+    # Plot intersections
+    for i in range(num_rays):
+        for j in range(len(circles)):
+            if batch_distances[i, j] < np.inf:
+                # Calculate intersection point
+                ray_start = rays[i, :2]
+                ray_dir = rays[i, 2:4]
+                intersection_point = ray_start + ray_dir * batch_distances[i, j]
+
+                ax.scatter(
+                    intersection_point[0],
+                    intersection_point[1],
+                    color="red",
+                    s=50,
+                    marker="x",
+                    linewidth=3,
+                )
+
+    ax.legend(["Rays", "Circles", "Intersections"])
+    plt.show()
+
+    return batch_distances, individual_distances
+
+
+def test_batch_ray_rectangle_intersection():
+    """Test batch ray-rectangle intersection"""
+    print("Testing batch ray-rectangle intersection")
+
+    # Create multiple rays
+    num_rays = 12
+    ray_angles = np.linspace(-np.pi / 3, np.pi / 3, num_rays)
+    ray_origins = np.array([[0.0, 0.5] for _ in range(num_rays)])
+    ray_directions = np.array([[np.cos(angle), np.sin(angle)] for angle in ray_angles])
+    ray_lengths = np.full(num_rays, 3.0)
+
+    rays = np.column_stack(
+        [
+            ray_origins[:, 0],
+            ray_origins[:, 1],
+            ray_directions[:, 0],
+            ray_directions[:, 1],
+            ray_lengths,
+        ]
+    )
+
+    # Create multiple rectangles
+    rectangles = np.array(
+        [
+            [
+                1.2,
+                0.8,
+                0.3,
+                0.4,
+                30,
+            ],  # [center_x, center_y, width, height, rotation_degrees]
+            [1.8, 0.2, 0.4, 0.3, -20],
+            [2.2, 0.7, 0.5, 0.2, 45],
+            [0.8, 0.3, 0.2, 0.6, 0],
+        ]
+    )
+
+    # Test batch intersection
+    print("Running batch intersection...")
+    start_time = time.time()
+    batch_distances = batch_ray_rectangle_intersection(rays, rectangles)
+    batch_time = time.time() - start_time
+
+    # Compare with individual intersections
+    print("Running individual intersections for comparison...")
+    start_time = time.time()
+    individual_distances = np.full((num_rays, len(rectangles)), np.inf)
+
+    for i in range(num_rays):
+        ray = Ray(
+            origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+            direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+            length=rays[i, 4],
+        )
+
+        for j, rect_data in enumerate(rectangles):
+            rectangle = Rectangle(
+                center=Vector2(x=rect_data[0], y=rect_data[1]),
+                width=rect_data[2],
+                height=rect_data[3],
+                rotation=rect_data[4],
+            )
+            result = ray_rectangle_intersection(ray, rectangle)
+            if result.intersects:
+                individual_distances[i, j] = result.t
+
+    individual_time = time.time() - start_time
+
+    # Check if results match
+    matches = np.allclose(batch_distances, individual_distances, rtol=1e-6)
+    print(f"Batch vs Individual results match: {matches}")
+    print(f"Batch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
+    print(f"Speedup: {individual_time/batch_time:.2f}x")
+
+    # Visualize results
+    fig, ax = setup_plot(
+        "Batch Ray-Rectangle Intersection", xlim=(-0.2, 3.0), ylim=(-0.2, 1.2)
+    )
+
+    # Plot rays
+    for i in range(num_rays):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+        ray_length = rays[i, 4]
+
+        ax.arrow(
+            ray_start[0],
+            ray_start[1],
+            ray_dir[0] * ray_length,
+            ray_dir[1] * ray_length,
+            head_width=0.02,
+            head_length=0.03,
+            fc="blue",
+            ec="blue",
+            alpha=0.7,
+        )
+
+    # Plot rectangles
+    for rect_data in rectangles:
+        rect = patches.Rectangle(
+            (-rect_data[2] / 2, -rect_data[3] / 2),
+            rect_data[2],
+            rect_data[3],
+            facecolor="green",
+            edgecolor="darkgreen",
+            alpha=0.3,
+            linewidth=2,
+        )
+
+        # Apply rotation and translation
+        transform = (
+            plt.matplotlib.transforms.Affine2D()
+            .rotate_deg(rect_data[4])
+            .translate(rect_data[0], rect_data[1])
+            + ax.transData
+        )
+        rect.set_transform(transform)
+        ax.add_patch(rect)
+
+    # Plot intersections
+    for i in range(num_rays):
+        for j in range(len(rectangles)):
+            if batch_distances[i, j] < np.inf:
+                ray_start = rays[i, :2]
+                ray_dir = rays[i, 2:4]
+                intersection_point = ray_start + ray_dir * batch_distances[i, j]
+
+                ax.scatter(
+                    intersection_point[0],
+                    intersection_point[1],
+                    color="red",
+                    s=50,
+                    marker="x",
+                    linewidth=3,
+                )
+
+    ax.legend(["Rays", "Rectangles", "Intersections"])
+    plt.show()
+
+    return batch_distances, individual_distances
+
+
+def test_batch_ray_line_intersection():
+    """Test batch ray-line intersection"""
+    print("Testing batch ray-line intersection")
+
+    # Create multiple rays
+    num_rays = 10
+    ray_angles = np.linspace(-np.pi / 4, np.pi / 4, num_rays)
+    ray_origins = np.array([[0.0, 0.5] for _ in range(num_rays)])
+    ray_directions = np.array([[np.cos(angle), np.sin(angle)] for angle in ray_angles])
+    ray_lengths = np.full(num_rays, 2.5)
+
+    rays = np.column_stack(
+        [
+            ray_origins[:, 0],
+            ray_origins[:, 1],
+            ray_directions[:, 0],
+            ray_directions[:, 1],
+            ray_lengths,
+        ]
+    )
+
+    # Create multiple lines
+    lines = np.array(
+        [
+            [0.8, 0.2, 0.8, 0.8],  # [p1_x, p1_y, p2_x, p2_y] - vertical line
+            [1.0, 0.1, 1.5, 0.9],  # diagonal line
+            [1.8, 0.3, 2.2, 0.3],  # horizontal line
+            [0.5, 0.6, 2.0, 0.4],  # diagonal line
+        ]
+    )
+
+    # Test batch intersection
+    print("Running batch intersection...")
+    start_time = time.time()
+    batch_distances = batch_ray_line_intersection(rays, lines)
+    batch_time = time.time() - start_time
+
+    # Compare with individual intersections
+    print("Running individual intersections for comparison...")
+    start_time = time.time()
+    individual_distances = np.full((num_rays, len(lines)), np.inf)
+
+    for i in range(num_rays):
+        ray = Ray(
+            origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+            direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+            length=rays[i, 4],
+        )
+
+        for j, line_data in enumerate(lines):
+            line = Line(
+                p1=Vector2(x=line_data[0], y=line_data[1]),
+                p2=Vector2(x=line_data[2], y=line_data[3]),
+            )
+            result = ray_line_intersection(ray, line)
+            if result.intersects:
+                individual_distances[i, j] = result.t
+
+    individual_time = time.time() - start_time
+
+    # Check if results match
+    matches = np.allclose(batch_distances, individual_distances, rtol=1e-6)
+    print(f"Batch vs Individual results match: {matches}")
+    print(f"Batch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
+    print(f"Speedup: {individual_time/batch_time:.2f}x")
+
+    # Visualize results
+    fig, ax = setup_plot(
+        "Batch Ray-Line Intersection", xlim=(-0.2, 2.5), ylim=(-0.2, 1.2)
+    )
+
+    # Plot rays
+    for i in range(num_rays):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+        ray_length = rays[i, 4]
+
+        ax.arrow(
+            ray_start[0],
+            ray_start[1],
+            ray_dir[0] * ray_length,
+            ray_dir[1] * ray_length,
+            head_width=0.02,
+            head_length=0.03,
+            fc="blue",
+            ec="blue",
+            alpha=0.7,
+        )
+
+    # Plot lines
+    for line_data in lines:
+        ax.plot(
+            [line_data[0], line_data[2]],
+            [line_data[1], line_data[3]],
+            color="purple",
+            linewidth=3,
+            alpha=0.7,
+        )
+
+    # Plot intersections
+    for i in range(num_rays):
+        for j in range(len(lines)):
+            if batch_distances[i, j] < np.inf:
+                ray_start = rays[i, :2]
+                ray_dir = rays[i, 2:4]
+                intersection_point = ray_start + ray_dir * batch_distances[i, j]
+
+                ax.scatter(
+                    intersection_point[0],
+                    intersection_point[1],
+                    color="red",
+                    s=50,
+                    marker="x",
+                    linewidth=3,
+                )
+
+    ax.legend(["Rays", "Lines", "Intersections"])
+    plt.show()
+
+    return batch_distances, individual_distances
+
+
+def test_batch_lidar_simulation():
+    """Test batch processing with LiDAR-like scenario"""
+    print("Testing batch LiDAR simulation")
+
+    # Create LiDAR-like rays (180 degrees, 180 rays)
+    num_rays = 180
+    agent_pos = Vector2(x=1.0, y=1.0)
+    base_direction = Vector2(x=0.5, y=0.5)  # Forward direction
+    max_range = 2.0
+
+    print(f"Creating {num_rays} LiDAR rays...")
+    rays = create_lidar_rays(
+        agent_pos, base_direction, num_rays, max_range, fov_degrees=180
+    )
+
+    # Create a complex environment with multiple obstacles
+    circles = np.array(
+        [
+            [1.5, 0.5, 0.2],
+            [0.3, 1.5, 0.15],
+            [2.2, 1.8, 0.25],
+            [0.8, 0.3, 0.1],
+            [2.5, 0.8, 0.18],
+        ]
+    )
+
+    rectangles = np.array(
+        [[1.8, 1.2, 0.3, 0.4, 30], [0.5, 0.8, 0.2, 0.5, -15], [2.0, 0.4, 0.4, 0.2, 45]]
+    )
+
+    lines = np.array(
+        [
+            [0.0, 0.0, 0.0, 3.0],  # left boundary
+            [0.0, 0.0, 3.0, 0.0],  # bottom boundary
+            [3.0, 0.0, 3.0, 3.0],  # right boundary
+            [0.0, 3.0, 3.0, 3.0],  # top boundary
+        ]
+    )
+
+    # Test batch intersection
+    print("Running batch intersection...")
+    start_time = time.time()
+
+    # Get distances for each shape type
+    circle_distances = batch_ray_circle_intersection(rays, circles)
+    rectangle_distances = batch_ray_rectangle_intersection(rays, rectangles)
+    line_distances = batch_ray_line_intersection(rays, lines)
+
+    # Find closest intersection for each ray
+    closest_distances = np.full(num_rays, np.inf)
+
+    # Check circles
+    min_circle_dist = np.min(circle_distances, axis=1)
+    closer_mask = min_circle_dist < closest_distances
+    closest_distances[closer_mask] = min_circle_dist[closer_mask]
+
+    # Check rectangles
+    min_rect_dist = np.min(rectangle_distances, axis=1)
+    closer_mask = min_rect_dist < closest_distances
+    closest_distances[closer_mask] = min_rect_dist[closer_mask]
+
+    # Check lines
+    min_line_dist = np.min(line_distances, axis=1)
+    closer_mask = min_line_dist < closest_distances
+    closest_distances[closer_mask] = min_line_dist[closer_mask]
+
+    batch_time = time.time() - start_time
+
+    print(f"Batch processing time: {batch_time:.4f}s")
+    print(f"Rays processed: {num_rays}")
+    print(
+        f"Obstacles: {len(circles)} circles, {len(rectangles)} rectangles, {len(lines)} lines"
+    )
+    print(f"Time per ray: {batch_time/num_rays*1000:.3f}ms")
+
+    # Count hits
+    hits = np.sum(closest_distances < np.inf)
+    print(f"Intersection hits: {hits}/{num_rays} ({hits/num_rays*100:.1f}%)")
+
+    # Visualize results
+    fig, ax = setup_plot("Batch LiDAR Simulation", xlim=(-0.2, 3.2), ylim=(-0.2, 3.2))
+
+    # Plot environment boundaries
+    for line_data in lines:
+        ax.plot(
+            [line_data[0], line_data[2]],
+            [line_data[1], line_data[3]],
+            color="black",
+            linewidth=3,
+            alpha=0.8,
+        )
+
+    # Plot obstacles
+    for circle_data in circles:
+        circle_patch = patches.Circle(
+            (circle_data[0], circle_data[1]),
+            circle_data[2],
+            facecolor="red",
+            edgecolor="darkred",
+            alpha=0.4,
+            linewidth=2,
+        )
+        ax.add_patch(circle_patch)
+
+    for rect_data in rectangles:
+        rect = patches.Rectangle(
+            (-rect_data[2] / 2, -rect_data[3] / 2),
+            rect_data[2],
+            rect_data[3],
+            facecolor="green",
+            edgecolor="darkgreen",
+            alpha=0.4,
+            linewidth=2,
+        )
+        transform = (
+            plt.matplotlib.transforms.Affine2D()
+            .rotate_deg(rect_data[4])
+            .translate(rect_data[0], rect_data[1])
+            + ax.transData
+        )
+        rect.set_transform(transform)
+        ax.add_patch(rect)
+
+    # Plot rays (every 10th ray to avoid clutter) with enhanced colors
+    hit_labeled = False
+    miss_labeled = False
+
+    for i in range(0, num_rays, 3):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+
+        if closest_distances[i] < np.inf:
+            # Ray hits something - use bright hit color
+            hit_point = ray_start + ray_dir * closest_distances[i]
+            ax.plot(
+                [ray_start[0], hit_point[0]],
+                [ray_start[1], hit_point[1]],
+                color="limegreen",
+                alpha=0.8,
+                linewidth=2,
+                label="Hit" if not hit_labeled else "",
+                zorder=5,
+            )
+            ax.scatter(
+                hit_point[0],
+                hit_point[1],
+                color="darkgreen",
+                s=15,
+                marker="o",
+                edgecolors="white",
+                linewidth=1,
+                zorder=8,
+            )
+            hit_labeled = True
+        else:
+            # Ray doesn't hit anything within range - use miss color
+            end_point = ray_start + ray_dir * rays[i, 4]
+            ax.plot(
+                [ray_start[0], end_point[0]],
+                [ray_start[1], end_point[1]],
+                color="lightsteelblue",
+                alpha=0.4,
+                linewidth=1,
+                linestyle="--",
+                label="Miss" if not miss_labeled else "",
+                zorder=3,
+            )
+            miss_labeled = True
+
+    # Plot agent
+    ax.scatter(
+        agent_pos.x,
+        agent_pos.y,
+        color="black",
+        s=100,
+        marker="o",
+        edgecolors="white",
+        linewidth=2,
+        label="Agent",
+        zorder=10,
+    )
+
+    # Plot agent facing direction
+    facing_length = 0.3  # Length of the direction arrow
+    ax.arrow(
+        agent_pos.x,
+        agent_pos.y,
+        base_direction.x * facing_length,
+        base_direction.y * facing_length,
+        head_width=0.05,
+        head_length=0.1,
+        fc="yellow",
+        ec="black",
+        linewidth=2,
+        zorder=11,
+        label="Facing Direction",
+    )
+
+    ax.legend()
+    plt.show()
+
+    return closest_distances
+
+
+def test_batch_performance_comparison():
+    """Test performance comparison between batch and individual processing"""
+    print("Testing batch vs individual performance")
+
+    # Test with increasing numbers of rays
+    ray_counts = [10, 50, 100, 200, 500]
+    obstacle_counts = [5, 10, 20, 50]
+
+    results = []
+
+    for num_rays in ray_counts:
+        for num_obstacles in obstacle_counts:
+            print(f"\nTesting {num_rays} rays vs {num_obstacles} obstacles...")
+
+            # Create rays
+            ray_angles = np.linspace(-np.pi / 2, np.pi / 2, num_rays)
+            ray_origins = np.array([[0.0, 0.5] for _ in range(num_rays)])
+            ray_directions = np.array(
+                [[np.cos(angle), np.sin(angle)] for angle in ray_angles]
+            )
+            ray_lengths = np.full(num_rays, 3.0)
+
+            rays = np.column_stack(
+                [
+                    ray_origins[:, 0],
+                    ray_origins[:, 1],
+                    ray_directions[:, 0],
+                    ray_directions[:, 1],
+                    ray_lengths,
+                ]
+            )
+
+            # Create obstacles (circles for simplicity)
+            circles = np.random.rand(num_obstacles, 3)
+            circles[:, 0] *= 2.5  # x position
+            circles[:, 1] *= 1.0  # y position
+            circles[:, 2] *= 0.2  # radius
+            circles[:, 2] += 0.05  # minimum radius
+
+            # Test batch processing
+            start_time = time.time()
+            batch_distances = batch_ray_circle_intersection(rays, circles)
+            batch_time = time.time() - start_time
+
+            # Test individual processing
+            start_time = time.time()
+            individual_distances = np.full((num_rays, num_obstacles), np.inf)
+
+            for i in range(num_rays):
+                ray = Ray(
+                    origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+                    direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+                    length=rays[i, 4],
+                )
+
+                for j, circle_data in enumerate(circles):
+                    circle = Circle(
+                        center=Vector2(x=circle_data[0], y=circle_data[1]),
+                        radius=circle_data[2],
+                    )
+                    result = ray_circle_intersection(ray, circle)
+                    if result.intersects:
+                        individual_distances[i, j] = result.t
+
+            individual_time = time.time() - start_time
+
+            speedup = individual_time / batch_time if batch_time > 0 else 0
+
+            results.append(
+                {
+                    "num_rays": num_rays,
+                    "num_obstacles": num_obstacles,
+                    "batch_time": batch_time,
+                    "individual_time": individual_time,
+                    "speedup": speedup,
+                }
+            )
+
+            print(f"  Batch time: {batch_time:.4f}s")
+            print(f"  Individual time: {individual_time:.4f}s")
+            print(f"  Speedup: {speedup:.2f}x")
+
+            # Verify results match
+            matches = np.allclose(batch_distances, individual_distances, rtol=1e-6)
+            print(f"  Results match: {matches}")
+
+    # Display results summary
+    print("\n" + "=" * 60)
+    print("PERFORMANCE COMPARISON SUMMARY")
+    print("=" * 60)
+    print(
+        f"{'Rays':<6} {'Obstacles':<10} {'Batch (s)':<10} {'Individual (s)':<14} {'Speedup':<8}"
+    )
+    print("-" * 60)
+
+    for result in results:
+        print(
+            f"{result['num_rays']:<6} {result['num_obstacles']:<10} "
+            f"{result['batch_time']:<10.4f} {result['individual_time']:<14.4f} "
+            f"{result['speedup']:<8.2f}x"
+        )
+
+    return results
+
+
+def test_batch_ray_intersection_full():
+    """Test the main batch_ray_intersection function with mixed obstacles"""
+    print("Testing batch_ray_intersection with mixed obstacles")
+
+    # Create LiDAR-like rays
+    num_rays = 72  # 5-degree intervals
+    agent_pos = Vector2(x=1.5, y=1.5)
+    base_direction = Vector2(x=1.0, y=0.0)  # Forward direction
+    max_range = 2.0
+
+    rays = create_lidar_rays(agent_pos, base_direction, num_rays, max_range)
+
+    # Create mixed obstacles
+    obstacles = []
+
+    # Add circle obstacles
+    circle_configs = [
+        ObstacleConfig(shape=Circle(center=Vector2(x=1.0, y=0.8), radius=0.2)),
+        ObstacleConfig(shape=Circle(center=Vector2(x=2.5, y=2.0), radius=0.15)),
+        ObstacleConfig(shape=Circle(center=Vector2(x=0.5, y=2.2), radius=0.25)),
+    ]
+
+    for config in circle_configs:
+        obstacles.append(CircleObstacle(config))
+
+    # Add rectangle obstacles
+    rect_configs = [
+        ObstacleConfig(
+            shape=Rectangle(
+                center=Vector2(x=2.0, y=1.0), width=0.3, height=0.4, rotation=30
+            )
+        ),
+        ObstacleConfig(
+            shape=Rectangle(
+                center=Vector2(x=0.8, y=1.8), width=0.4, height=0.2, rotation=-15
+            )
+        ),
+    ]
+
+    for config in rect_configs:
+        obstacles.append(RectangleObstacle(config))
+
+    # Create boundaries
+    boundaries = [
+        PolygonBoundaryConfig(
+            vertices=[
+                Vector2(x=0.0, y=0.0),
+                Vector2(x=3.0, y=0.0),
+                Vector2(x=3.0, y=3.0),
+                Vector2(x=0.0, y=3.0),
+            ]
+        )
+    ]
+
+    # Test batch intersection
+    print("Running batch intersection...")
+    start_time = time.time()
+    batch_distances = batch_ray_intersection(rays, obstacles, boundaries)
+    batch_time = time.time() - start_time
+
+    # Compare with individual intersections
+    print("Running individual intersections for comparison...")
+    start_time = time.time()
+    individual_distances = np.full(num_rays, np.inf)
+
+    for i in range(num_rays):
+        ray = Ray(
+            origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+            direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+            length=rays[i, 4],
+        )
+
+        result = ray_intersection(ray, obstacles, boundaries)
+        if result.intersects:
+            individual_distances[i] = result.t
+
+    individual_time = time.time() - start_time
+
+    # Check if results match
+    matches = np.allclose(batch_distances, individual_distances, rtol=1e-6)
+    print(f"Batch vs Individual results match: {matches}")
+    print(f"Batch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
+    print(f"Speedup: {individual_time/batch_time:.2f}x")
+
+    # Count hits
+    batch_hits = np.sum(batch_distances < np.inf)
+    individual_hits = np.sum(individual_distances < np.inf)
+    print(f"Batch hits: {batch_hits}/{num_rays} ({batch_hits/num_rays*100:.1f}%)")
+    print(
+        f"Individual hits: {individual_hits}/{num_rays} ({individual_hits/num_rays*100:.1f}%)"
+    )
+
+    # Visualize results
+    fig, ax = setup_plot(
+        "Batch Ray Intersection - Mixed Obstacles", xlim=(-0.2, 3.2), ylim=(-0.2, 3.2)
+    )
+
+    # Plot boundaries
+    for boundary in boundaries:
+        boundary_obj = PolygonBoundary(boundary)
+        for wall in boundary_obj.walls:
+            p1, p2 = wall
+            ax.plot(
+                [p1[0], p2[0]], [p1[1], p2[1]], color="black", linewidth=3, alpha=0.8
+            )
+
+    # Plot obstacles
+    for obstacle in obstacles:
+        shape = obstacle.get_current_state()
+        if isinstance(shape, Circle):
+            circle_patch = patches.Circle(
+                (shape.center.x, shape.center.y),
+                shape.radius,
+                facecolor="red",
+                edgecolor="darkred",
+                alpha=0.4,
+                linewidth=2,
+            )
+            ax.add_patch(circle_patch)
+        elif isinstance(shape, Rectangle):
+            rect = patches.Rectangle(
+                (-shape.width / 2, -shape.height / 2),
+                shape.width,
+                shape.height,
+                facecolor="green",
+                edgecolor="darkgreen",
+                alpha=0.4,
+                linewidth=2,
+            )
+            transform = (
+                plt.matplotlib.transforms.Affine2D()
+                .rotate_deg(shape.rotation)
+                .translate(shape.center.x, shape.center.y)
+                + ax.transData
+            )
+            rect.set_transform(transform)
+            ax.add_patch(rect)
+
+    # Plot agent
+    ax.scatter(
+        agent_pos.x,
+        agent_pos.y,
+        color="blue",
+        s=100,
+        marker="o",
+        edgecolors="darkblue",
+        linewidth=2,
+        label="Agent",
+    )
+
+    # Plot rays with hits (every 6th ray to avoid clutter) with enhanced colors
+    hit_labeled = False
+    miss_labeled = False
+
+    for i in range(0, num_rays, 6):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+
+        if batch_distances[i] < np.inf:
+            # Ray hits something - use bright hit color
+            hit_point = ray_start + ray_dir * batch_distances[i]
+            ax.plot(
+                [ray_start[0], hit_point[0]],
+                [ray_start[1], hit_point[1]],
+                color="mediumorchid",
+                alpha=0.7,
+                linewidth=2,
+                label="Hit" if not hit_labeled else "",
+                zorder=5,
+            )
+            ax.scatter(
+                hit_point[0],
+                hit_point[1],
+                color="purple",
+                s=20,
+                marker="*",
+                edgecolors="white",
+                linewidth=1,
+                zorder=8,
+            )
+            hit_labeled = True
+        else:
+            # Ray doesn't hit anything within range - use miss color
+            end_point = ray_start + ray_dir * rays[i, 4]
+            ax.plot(
+                [ray_start[0], end_point[0]],
+                [ray_start[1], end_point[1]],
+                color="lightsteelblue",
+                alpha=0.4,
+                linewidth=1,
+                linestyle="--",
+                label="Miss" if not miss_labeled else "",
+                zorder=3,
+            )
+            miss_labeled = True
+
+    ax.legend()
+    plt.show()
+
+    return batch_distances, individual_distances
+
+
+def test_batch_ray_intersection_detailed():
+    """Test the detailed batch ray intersection function with full RayIntersectionOutput results"""
+    print("Testing batch_ray_intersection_detailed with full results")
+
+    # Create LiDAR-like rays
+    num_rays = 16  # Smaller number for detailed output
+    agent_pos = Vector2(x=1.5, y=1.5)
+    base_direction = Vector2(x=1.0, y=0.0)  # Forward direction
+    max_range = 2.0
+
+    rays = create_lidar_rays(
+        agent_pos, base_direction, num_rays, max_range, fov_degrees=180
+    )
+
+    # Create mixed obstacles
+    obstacles = []
+
+    # Add circle obstacles
+    circle_configs = [
+        ObstacleConfig(shape=Circle(center=Vector2(x=2.0, y=1.2), radius=0.2)),
+        ObstacleConfig(shape=Circle(center=Vector2(x=1.0, y=2.2), radius=0.15)),
+    ]
+
+    for config in circle_configs:
+        obstacles.append(CircleObstacle(config))
+
+    # Add rectangle obstacles
+    rect_configs = [
+        ObstacleConfig(
+            shape=Rectangle(
+                center=Vector2(x=2.5, y=1.8), width=0.3, height=0.4, rotation=30
+            )
+        ),
+    ]
+
+    for config in rect_configs:
+        obstacles.append(RectangleObstacle(config))
+
+    # Create boundaries
+    boundaries = [
+        PolygonBoundaryConfig(
+            vertices=[
+                Vector2(x=0.5, y=0.5),
+                Vector2(x=3.5, y=0.5),
+                Vector2(x=3.5, y=2.5),
+                Vector2(x=0.5, y=2.5),
+            ]
+        )
+    ]
+
+    # Test detailed batch intersection
+    print("Running detailed batch intersection...")
+    start_time = time.time()
+    detailed_results = batch_ray_intersection_detailed(rays, obstacles, boundaries)
+    batch_time = time.time() - start_time
+
+    # Compare with individual intersections
+    print("Running individual intersections for comparison...")
+    start_time = time.time()
+    individual_results = []
+
+    for i in range(num_rays):
+        ray = Ray(
+            origin=Vector2(x=rays[i, 0], y=rays[i, 1]),
+            direction=Vector2(x=rays[i, 2], y=rays[i, 3]),
+            length=rays[i, 4],
+        )
+
+        result = ray_intersection(ray, obstacles, boundaries)
+        individual_results.append(result)
+
+    individual_time = time.time() - start_time
+
+    # Verify results match
+    matches = True
+    for i, (batch_result, individual_result) in enumerate(
+        zip(detailed_results, individual_results)
+    ):
+        if batch_result.intersects != individual_result.intersects:
+            matches = False
+            break
+        if batch_result.intersects and individual_result.intersects:
+            if abs(batch_result.t - individual_result.t) > 1e-6:
+                matches = False
+                break
+
+    print(f"Detailed batch vs Individual results match: {matches}")
+    print(f"Batch time: {batch_time:.4f}s, Individual time: {individual_time:.4f}s")
+    print(f"Speedup: {individual_time/batch_time:.2f}x")
+
+    # Analyze detailed results
+    print(f"\nDetailed Results Analysis:")
+    print(f"Total rays: {num_rays}")
+
+    hits = sum(1 for result in detailed_results if result.intersects)
+    obstacle_hits = sum(
+        1
+        for result in detailed_results
+        if result.intersects and result.intersecting_with == "obstacle"
+    )
+    boundary_hits = sum(
+        1
+        for result in detailed_results
+        if result.intersects and result.intersecting_with == "boundary"
+    )
+
+    print(f"Total hits: {hits}/{num_rays} ({hits/num_rays*100:.1f}%)")
+    print(f"Obstacle hits: {obstacle_hits} ({obstacle_hits/num_rays*100:.1f}%)")
+    print(f"Boundary hits: {boundary_hits} ({boundary_hits/num_rays*100:.1f}%)")
+    print(f"Misses: {num_rays - hits} ({(num_rays - hits)/num_rays*100:.1f}%)")
+
+    # Print detailed intersection data
+    print(f"\nDetailed Intersection Data:")
+    print(f"{'Ray':<4} {'Hit':<5} {'Type':<9} {'Distance':<8} {'Point':<20}")
+    print("-" * 50)
+
+    for i, result in enumerate(detailed_results):
+        if result.intersects:
+            hit_type = result.intersecting_with or "unknown"
+            point_str = f"({result.intersection.x:.2f}, {result.intersection.y:.2f})"
+            print(f"{i:<4} {'Yes':<5} {hit_type:<9} {result.t:<8.3f} {point_str:<20}")
+        else:
+            print(f"{i:<4} {'No':<5} {'-':<9} {'-':<8} {'-':<20}")
+
+    # Visualize results
+    fig, ax = setup_plot("Detailed Batch Ray Intersection", xlim=(0, 4), ylim=(0, 3))
+
+    # Plot boundaries
+    boundary_labeled = False
+    for boundary in boundaries:
+        boundary_obj = PolygonBoundary(boundary)
+        for wall in boundary_obj.walls:
+            p1, p2 = wall
+            ax.plot(
+                [p1[0], p2[0]],
+                [p1[1], p2[1]],
+                color="black",
+                linewidth=3,
+                alpha=0.8,
+                label="Boundary" if not boundary_labeled else "",
+            )
+            boundary_labeled = True
+
+    # Plot obstacles
+    for obstacle in obstacles:
+        shape = obstacle.get_current_state()
+        if isinstance(shape, Circle):
+            circle_patch = patches.Circle(
+                (shape.center.x, shape.center.y),
+                shape.radius,
+                facecolor="red",
+                edgecolor="darkred",
+                alpha=0.4,
+                linewidth=2,
+            )
+            ax.add_patch(circle_patch)
+        elif isinstance(shape, Rectangle):
+            rect = patches.Rectangle(
+                (-shape.width / 2, -shape.height / 2),
+                shape.width,
+                shape.height,
+                facecolor="green",
+                edgecolor="darkgreen",
+                alpha=0.4,
+                linewidth=2,
+            )
+            transform = (
+                plt.matplotlib.transforms.Affine2D()
+                .rotate_deg(shape.rotation)
+                .translate(shape.center.x, shape.center.y)
+                + ax.transData
+            )
+            rect.set_transform(transform)
+            ax.add_patch(rect)
+
+    # Plot agent
+    ax.scatter(
+        agent_pos.x,
+        agent_pos.y,
+        color="blue",
+        s=100,
+        marker="o",
+        edgecolors="darkblue",
+        linewidth=2,
+        label="Agent",
+        zorder=10,
+    )
+
+    # Plot rays with different colors based on what they hit
+    obstacle_hit_labeled = False
+    boundary_hit_labeled = False
+    miss_labeled = False
+
+    for i, result in enumerate(detailed_results):
+        ray_start = rays[i, :2]
+        ray_dir = rays[i, 2:4]
+
+        if result.intersects:
+            # Ray hits something - color by object type
+            hit_point = np.array([result.intersection.x, result.intersection.y])
+
+            if result.intersecting_with == "obstacle":
+                ray_color = "crimson"
+                hit_color = "darkred"
+                marker = "X"
+                marker_size = 40
+                ray_width = 2.5
+                ray_alpha = 0.8
+                label = "Obstacle Hit" if not obstacle_hit_labeled else ""
+                obstacle_hit_labeled = True
+            else:  # boundary
+                ray_color = "darkorange"
+                hit_color = "chocolate"
+                marker = "s"
+                marker_size = 35
+                ray_width = 2.5
+                ray_alpha = 0.8
+                label = "Boundary Hit" if not boundary_hit_labeled else ""
+                boundary_hit_labeled = True
+
+            # Draw ray line with distinct color
+            ax.plot(
+                [ray_start[0], hit_point[0]],
+                [ray_start[1], hit_point[1]],
+                color=ray_color,
+                alpha=ray_alpha,
+                linewidth=ray_width,
+                label=label,
+                zorder=5,
+            )
+
+            # Draw intersection marker
+            ax.scatter(
+                hit_point[0],
+                hit_point[1],
+                color=hit_color,
+                s=marker_size,
+                marker=marker,
+                linewidth=2,
+                edgecolors="white",
+                zorder=8,
+            )
+        else:
+            # Ray doesn't hit anything - use distinct miss color
+            end_point = ray_start + ray_dir * rays[i, 4]
+            ax.plot(
+                [ray_start[0], end_point[0]],
+                [ray_start[1], end_point[1]],
+                color="lightsteelblue",
+                alpha=0.6,
+                linewidth=1.5,
+                linestyle="--",
+                label="Miss" if not miss_labeled else "",
+                zorder=3,
+            )
+            miss_labeled = True
+
+    ax.legend()
+    plt.show()
+
+    return detailed_results
+
+
+def run_all_batch_tests():
+    """Run all batch test functions"""
+    print("=" * 60)
+    print("RUNNING ALL BATCH RAY INTERSECTION TESTS")
+    print("=" * 60)
+
+    batch_test_functions = [
+        test_batch_ray_circle_intersection,
+        test_batch_ray_rectangle_intersection,
+        test_batch_ray_line_intersection,
+        test_batch_lidar_simulation,
+        test_batch_ray_intersection_full,
+        test_batch_ray_intersection_detailed,
+        test_batch_performance_comparison,
+    ]
+
+    for test_func in batch_test_functions:
+        print(f"\n{'-' * 50}")
+        try:
+            test_func()
+        except Exception as e:
+            print(f"Test {test_func.__name__} failed: {e}")
+            import traceback
+
+            traceback.print_exc()
+        print(f"{'-' * 50}")
+
+    print("\nAll batch tests completed!")
+
+
 def run_all_tests():
     """Run all test functions"""
     print("=" * 50)
@@ -698,8 +1893,8 @@ def run_all_tests():
         test_ray_line_intersection_miss,
         test_ray_boundary_intersection,
         test_multiple_intersections,
-        test_ray_intersection_with_length,  # Updated name
-        test_ray_length_vs_intersections,  # New test
+        test_ray_intersection_with_length,
+        test_ray_length_vs_intersections,
     ]
 
     for test_func in test_functions:
@@ -707,49 +1902,71 @@ def run_all_tests():
         test_func()
         print(f"{'-' * 30}")
 
-    print("\nAll tests completed!")
+    print("\nAll individual tests completed!")
+
+    # Run batch tests
+    print("\n" + "=" * 50)
+    print("RUNNING BATCH TESTS")
+    print("=" * 50)
+    run_all_batch_tests()
 
 
 if __name__ == "__main__":
     # Example usage - you can run individual tests or all tests
     print("Ray Intersection Test Module")
     print("Available test functions:")
-    print("- test_ray_circle_intersection_hit()")
-    print("- test_ray_circle_intersection_miss()")
-    print("- test_ray_rectangle_intersection_hit()")
-    print("- test_ray_rectangle_intersection_miss()")
-    print("- test_ray_line_intersection_hit()")
-    print("- test_ray_line_intersection_miss()")
-    print("- test_ray_boundary_intersection()")
-    print("- test_multiple_intersections()")
-    print("- test_ray_intersection_with_length()")  # Updated name
-    print("- test_ray_length_vs_intersections()")  # New test
-    print("- run_all_tests()")
+    print("- Individual ray tests:")
+    print("  - test_ray_circle_intersection_hit()")
+    print("  - test_ray_circle_intersection_miss()")
+    print("  - test_ray_rectangle_intersection_hit()")
+    print("  - test_ray_rectangle_intersection_miss()")
+    print("  - test_ray_line_intersection_hit()")
+    print("  - test_ray_line_intersection_miss()")
+    print("  - test_ray_boundary_intersection()")
+    print("  - test_multiple_intersections()")
+    print("  - test_ray_intersection_with_length()")
+    print("  - test_ray_length_vs_intersections()")
+    print("- Batch ray tests:")
+    print("  - test_batch_ray_circle_intersection()")
+    print("  - test_batch_ray_rectangle_intersection()")
+    print("  - test_batch_ray_line_intersection()")
+    print("  - test_batch_lidar_simulation()")
+    print("  - test_batch_ray_intersection_full()")
+    print("  - test_batch_ray_intersection_detailed()")
+    print("  - test_batch_performance_comparison()")
+    print("- Combined tests:")
+    print("  - run_all_tests() - runs both individual and batch tests")
+    print("  - run_all_batch_tests() - runs only batch tests")
     print("\nRun any function individually or call run_all_tests() to run everything")
 
     # Quick demo test
     print("\n" + "=" * 40)
-    print("QUICK DEMO - Testing ray-circle intersection")
+    print("QUICK DEMO - Testing batch ray-circle intersection")
     print("=" * 40)
 
-    # Simple test without plotting
-    ray = Ray(origin=Vector2(x=0, y=0), direction=Vector2(x=1, y=0), length=2.0)
-    circle = Circle(center=Vector2(x=1, y=0), radius=0.5)
-    result = ray_circle_intersection(ray, circle)
+    # Simple batch test without plotting
+    rays = np.array(
+        [
+            [0.0, 0.0, 1.0, 0.0, 2.0],  # [origin_x, origin_y, dir_x, dir_y, length]
+            [0.0, 0.5, 1.0, 0.5, 2.0],
+            [0.0, 1.0, 1.0, 0.0, 2.0],
+        ]
+    )
 
-    if result.intersects:
-        print(
-            f"✅ SUCCESS: Ray intersects circle at ({result.intersection.x:.3f}, {result.intersection.y:.3f})"
-        )
-        print(f"Distance along ray: {result.t:.3f}")
-        print(f"Ray length: {ray.length}")
-    else:
-        print("❌ No intersection found")
+    circles = np.array(
+        [[1.0, 0.0, 0.2], [1.5, 0.8, 0.15]]  # [center_x, center_y, radius]
+    )
 
-    print("\nTo see visual plots, run individual test functions!")
-    print("Example: test_ray_circle_intersection_hit()")
+    result = batch_ray_circle_intersection(rays, circles)
+    print(f"✅ Batch intersection result shape: {result.shape}")
+    print(f"Intersection distances:\n{result}")
 
-    # Uncomment to run all tests automatically
-    # run_all_tests()
-    # test_ray_circle_intersection_hit()
-    test_ray_intersection_with_length()
+    print(
+        "\nTo see visual plots and detailed comparisons, run individual test functions!"
+    )
+    print("Example: test_batch_ray_circle_intersection()")
+    print("For comprehensive testing: run_all_batch_tests()")
+
+    # Uncomment to run batch tests automatically
+    # run_all_batch_tests()
+    test_batch_lidar_simulation()
