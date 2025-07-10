@@ -14,14 +14,9 @@ class Vector2(BaseModel):
         return np.array([self.x, self.y])
 
 
-class AgentConfig(BaseModel):
-    start_pos: Vector2
-    goal_pos: Vector2
-    radius: float = 0.02
-    max_speed: float
-    preferred_speed: float
-    spawn_time: float
-    agent_col: Literal["blue", "green", "yellow", "red"] = "blue"
+class Line(BaseModel):
+    start: Vector2
+    end: Vector2
 
 
 class Rectangle(BaseModel):
@@ -30,6 +25,18 @@ class Rectangle(BaseModel):
     width: float
     height: float
     rotation: float = 0  # Rotation in degrees
+
+
+class AgentConfig(BaseModel):
+    start_pos: Vector2
+    goal_rectangle: Rectangle
+    radius: float = 0.02
+    max_speed: float
+    preferred_speed: float
+    spawn_time: float
+    agent_col: Literal["blue", "green", "yellow", "red"] = "blue"
+    max_range: float = 0.25
+    fov_degrees: float = 210.0
 
 
 class Circle(BaseModel):
@@ -63,6 +70,7 @@ class EnvConfig(BaseModel):
     obstacles: List[ObstacleConfig]
     agents: List[AgentConfig]
     max_time: int
+    num_rays: int = 60
 
 
 if __name__ == "__main__":

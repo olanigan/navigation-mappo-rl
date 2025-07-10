@@ -176,7 +176,9 @@ class CircleObstacle(Obstacle):
 
 class PolygonBoundary:
     def __init__(self, config: PolygonBoundaryConfig):
-        self.vertices = [v.to_numpy() for v in config.vertices]
+        self.vertices = [
+            v.to_numpy() if isinstance(v, Vector2) else v for v in config.vertices
+        ]
         self.walls = []
         for i in range(len(self.vertices)):
             p1 = self.vertices[i]

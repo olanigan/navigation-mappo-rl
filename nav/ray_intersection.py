@@ -14,7 +14,7 @@ class Ray(BaseModel):
     length: float
 
 
-IntersectingWith = Literal["obstacle", "boundary", "agent"]
+IntersectingWith = Literal["obstacle", "boundary", "agent", "goal"]
 
 
 class RayIntersectionOutput(BaseModel):
@@ -325,7 +325,11 @@ def batch_ray_intersection(
 
 
 def batch_ray_intersection_detailed(
-    rays: np.ndarray, obstacles: List[Obstacle], boundaries: List[PolygonBoundaryConfig]
+    rays: np.ndarray,
+    obstacles: List[Obstacle],
+    boundaries: List[PolygonBoundaryConfig],
+    goal_rectangles: Optional[List[Optional[Rectangle]]] = None,
+    rays_per_agent: Optional[List[int]] = None,
 ) -> List[RayIntersectionOutput]:
     """
     Detailed vectorized intersection function that returns full RayIntersectionOutput for each ray.
@@ -334,6 +338,8 @@ def batch_ray_intersection_detailed(
         rays: [N, 5] array of [origin_x, origin_y, dir_x, dir_y, length]
         obstacles: List of obstacle objects
         boundaries: List of boundary configurations
+        goal_rectangles: List of goal rectangles, one per agent (can contain None for agents without goals)
+        rays_per_agent: List of ray counts per agent to map rays to correct goal rectangles
 
     Returns:
         results: List[RayIntersectionOutput] - one result per ray with full details
@@ -461,6 +467,58 @@ def batch_ray_intersection_detailed(
                         x=intersection_point[0], y=intersection_point[1]
                     )
 
+    # Process goal rectangles (agent-specific)
+    if goal_rectangles is not None and rays_per_agent is not None:
+        ray_start_idx = 0
+        for agent_idx, (goal_rectangle, num_rays) in enumerate(
+            zip(goal_rectangles, rays_per_agent)
+        ):
+            if goal_rectangle is None:
+                ray_start_idx += num_rays
+                continue
+
+            # Get rays for this specific agent
+            agent_rays = rays[ray_start_idx : ray_start_idx + num_rays]
+
+            # Convert goal rectangle to numpy array format for batch processing
+            goal_rectangle_array = np.array(
+                [
+                    [
+                        goal_rectangle.center.x,
+                        goal_rectangle.center.y,
+                        goal_rectangle.width,
+                        goal_rectangle.height,
+                        goal_rectangle.rotation,
+                    ]
+                ]
+            )  # [1, 5]
+
+            # Check intersections for this agent's rays only
+            goal_rectangle_distances = batch_ray_rectangle_intersection(
+                agent_rays, goal_rectangle_array
+            )  # [num_rays, 1]
+
+            # Update closest intersections for this agent's rays
+            for i in range(num_rays):
+                global_ray_idx = ray_start_idx + i
+                min_dist = goal_rectangle_distances[
+                    i, 0
+                ]  # Get distance from the single goal rectangle
+
+                if min_dist < closest_distances[global_ray_idx]:
+                    closest_distances[global_ray_idx] = min_dist
+                    intersecting_with[global_ray_idx] = "goal"
+
+                    # Calculate intersection point
+                    ray_origin = rays[global_ray_idx, :2]
+                    ray_direction = rays[global_ray_idx, 2:4]
+                    intersection_point = ray_origin + ray_direction * min_dist
+                    closest_intersections[global_ray_idx] = Vector2(
+                        x=intersection_point[0], y=intersection_point[1]
+                    )
+
+            ray_start_idx += num_rays
+
     # Build RayIntersectionOutput objects for each ray
     for i in range(N):
         if closest_distances[i] < np.inf:
@@ -499,8 +557,8 @@ def rays_to_array(ray_list: List[Ray]) -> np.ndarray:
 
 
 def create_lidar_rays(
-    origin: Vector2,
-    base_direction: Vector2,
+    origin: Union[Vector2, np.ndarray],
+    base_direction: Union[Vector2, np.ndarray],
     num_rays: int = 180,
     max_range: float = 10.0,
     fov_degrees: float = 360.0,
@@ -519,7 +577,11 @@ def create_lidar_rays(
         rays: [num_rays, 5] array ready for batch processing
     """
     # Normalize base direction
-    base_dir = np.array([base_direction.x, base_direction.y])
+    if isinstance(base_direction, Vector2):
+        base_dir = np.array([base_direction.x, base_direction.y])
+    else:
+        base_dir = base_direction
+
     base_dir = base_dir / np.linalg.norm(base_dir)
 
     # Calculate base angle
@@ -536,8 +598,10 @@ def create_lidar_rays(
 
     # Create rays array
     rays = np.zeros((num_rays, 5))
-    rays[:, 0] = origin.x  # origin_x
-    rays[:, 1] = origin.y  # origin_y
+
+    origin = origin.to_numpy() if isinstance(origin, Vector2) else origin
+    rays[:, 0] = origin[0]  # origin_x
+    rays[:, 1] = origin[1]  # origin_y
     rays[:, 2] = np.cos(angles)  # direction_x
     rays[:, 3] = np.sin(angles)  # direction_y
     rays[:, 4] = max_range  # length
@@ -806,6 +870,7 @@ def ray_intersection(
     ray: Ray,
     obstacles: List[Obstacle],
     boundaries: List[PolygonBoundaryConfig],
+    goal_rectangle: Optional[Rectangle] = None,
 ) -> RayIntersectionOutput:
     """
     Find the closest intersection between a ray and obstacles and boundaries.
@@ -813,18 +878,28 @@ def ray_intersection(
 
     closest_t = float("inf")
     closest_intersection = None
+    intersecting_with = None
 
     for obstacle in obstacles:
         result = ray_obstacle_intersection(ray, obstacle)
         if result.intersects and result.t is not None and result.t < closest_t:
             closest_t = result.t
             closest_intersection = result.intersection
+            intersecting_with = "obstacle"
 
     for boundary in boundaries:
         result = ray_boundary_intersection(ray, boundary)
         if result.intersects and result.t is not None and result.t < closest_t:
             closest_t = result.t
             closest_intersection = result.intersection
+            intersecting_with = "boundary"
+
+    if goal_rectangle is not None:
+        result = ray_rectangle_intersection(ray, goal_rectangle)
+        if result.intersects and result.t is not None and result.t < closest_t:
+            closest_t = result.t
+            closest_intersection = result.intersection
+            intersecting_with = "goal"
 
     if closest_intersection is None:
         return NoHit
@@ -833,4 +908,5 @@ def ray_intersection(
         intersects=True,
         intersection=closest_intersection,
         t=closest_t,
+        intersecting_with=intersecting_with,
     )

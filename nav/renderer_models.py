@@ -1,6 +1,7 @@
 from pydantic import BaseModel
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union, Optional
 from .config_models import *
+from .ray_intersection import RayIntersectionOutput
 
 
 class AgentState(BaseModel):
@@ -8,6 +9,12 @@ class AgentState(BaseModel):
     radius: float
     color: str
     velocity: Tuple[float, float]
+    direction: Tuple[float, float]  # Unit vector representing facing direction
+    lidar_observation: list[RayIntersectionOutput]
+    fov_degrees: float
+    max_range: float
+    goal_rectangle: Rectangle
+    goal_reached: bool
 
 
 class ObstacleState(BaseModel):
