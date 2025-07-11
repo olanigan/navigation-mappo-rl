@@ -1,7 +1,15 @@
 import arcade
 import time
-from typing import List
+import numpy as np
+from typing import List, Optional
 from .renderer_models import RenderState, AgentState
+
+try:
+    import imageio
+
+    IMAGEIO_AVAILABLE = True
+except ImportError:
+    IMAGEIO_AVAILABLE = False
 
 # --- Theme Colors ---
 BACKGROUND_COLOR = arcade.color.BLACK
@@ -28,7 +36,11 @@ class SimulationWindow(arcade.Window):
     """
 
     def __init__(
-        self, window_width: int = 800, window_height: int = 800, target_fps: int = 30
+        self,
+        window_width: int = 800,
+        window_height: int = 800,
+        target_fps: int = 30,
+        record: bool = False,
     ):
         super().__init__(window_width, window_height, "Navigation Simulation")
         arcade.set_background_color(BACKGROUND_COLOR)
@@ -40,11 +52,35 @@ class SimulationWindow(arcade.Window):
         # self.set_vsync(False)  # Disable VSync to allow custom FPS control
         self.set_update_rate(1 / target_fps)
 
+        # Recording setup
+        if record and not IMAGEIO_AVAILABLE:
+            print("❌ Error: Recording requested but imageio not available.")
+            print("   Install with: pip install imageio[ffmpeg]")
+            print("   Running without recording...")
+
+        self.record = record and IMAGEIO_AVAILABLE
+        self.frames = []
+        self.recording_writer: Optional[imageio.core.Format.Writer] = None
+        if self.record:
+            print(
+                f"🎬 Recording setup: {window_width}x{window_height} at {target_fps} FPS"
+            )
+
         # FPS tracking
         self.frame_count = 0
 
     def on_mouse_motion(self, x, y, dx, dy):
         self.cursor_pos = (x / self.width, y / self.height)
+
+    def on_key_press(self, key, modifiers):
+        """Handle keyboard input."""
+        if key == arcade.key.R and self.record:
+            # Stop recording manually with 'R' key
+            print("🎬 Stopping recording manually...")
+            self.stop_recording()
+        elif key == arcade.key.ESCAPE:
+            # Quick exit
+            self.close()
 
     def render(self, state: RenderState):
         """
@@ -126,6 +162,10 @@ class SimulationWindow(arcade.Window):
 
             # Draw velocity arrow on top
             arcade.draw_line(x, y, x + vX, y + vY, AGENT_ARROW_COLOR, 4)
+
+        # Capture frame for recording
+        if self.record:
+            self._capture_frame()
 
     def _draw_agent_rays(self, agent: AgentState):
         """
@@ -263,3 +303,85 @@ class SimulationWindow(arcade.Window):
 
             # Move to next dash
             current_pos += dash_length + gap_length
+
+    def _capture_frame(self):
+        """
+        Capture the current frame for recording.
+        """
+        if not self.record or not IMAGEIO_AVAILABLE:
+            return
+
+        try:
+            # Get the current frame as RGB data
+            image = arcade.get_image()
+            # Convert PIL image to numpy array
+            frame = np.array(image)
+            # Convert RGBA to RGB if necessary
+            if frame.shape[2] == 4:
+                frame = frame[:, :, :3]
+
+            # Add frame to collection
+            self.frames.append(frame)
+
+            # If we have too many frames in memory, start writing to file
+            if len(self.frames) > 120:  # About 4 seconds at 30 FPS
+                self._flush_frames_to_video()
+
+        except Exception as e:
+            print(f"Warning: Failed to capture frame: {e}")
+
+    def _flush_frames_to_video(self):
+        """
+        Write accumulated frames to video file.
+        """
+        if not self.frames:
+            return
+
+        try:
+            # Initialize video writer if not already done
+            if self.recording_writer is None:
+                self.recording_writer = imageio.get_writer(
+                    "movies/footage.mp4",
+                    fps=self.target_fps,
+                    codec="libx264",
+                    quality=8,
+                    pixelformat="yuv420p",
+                )
+                print("🎬 Started writing video to movies/footage.mp4")
+
+            # Write all accumulated frames
+            for frame in self.frames:
+                self.recording_writer.append_data(frame)
+
+            # Clear frames from memory
+            self.frames.clear()
+
+        except Exception as e:
+            print(f"Warning: Failed to write frames to video: {e}")
+
+    def stop_recording(self):
+        """
+        Stop recording and save the final video file.
+        """
+        if not self.record:
+            return
+
+        try:
+            # Write any remaining frames
+            self._flush_frames_to_video()
+
+            # Close the video writer
+            if self.recording_writer is not None:
+                self.recording_writer.close()
+                self.recording_writer = None
+                print("🎬 Recording saved to movies/footage.mp4")
+
+        except Exception as e:
+            print(f"Warning: Failed to finalize recording: {e}")
+
+    def on_close(self):
+        """
+        Handle window close event - save recording if active.
+        """
+        self.stop_recording()
+        super().on_close()
