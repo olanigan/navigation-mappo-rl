@@ -1,5 +1,5 @@
 # Configuration for a basic environment with one agent and obstacles
-num_rays: 60
+num_rays: 30
 goal_threshold: 0.02
 
 # Boundary configuration
@@ -21,7 +21,7 @@ agents:
       y: 0.85
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 90 
     spawn_time: 0.0
     max_range: 0.3
 
@@ -31,42 +31,9 @@ obstacles:
   - shape:
       type: rectangle
       center:
-        x: 0.65
+        x: 0.5
         y: 0.5
       width: 0.25
       height: 0.1
-    schedule:
-      speed: 0.1
-      direction:
-        x: -1
-        y: 0
-      angular_speed: 10
-      boundary_x_min: 0.2
-      boundary_x_max: 0.8
 
-  - shape:
-      type: rectangle
-      center:
-        x: 0.25
-        y: 0.75
-      width: 0.15
-      height: 0.1
-    schedule:
-      speed: 0.1
-      direction:
-        x: 1
-        y: 0
-      angular_speed: 20
-      boundary_x_min: 0.2
-      boundary_x_max: 0.8
-
-  - shape:
-      type: rectangle
-      center:
-        x: 0.5
-        y: 0.6
-      width: 0.02
-      height: 0.2
-    schedule:
-      angular_speed: 30  # Degrees per second
-max_time: 100
+max_time: 1000

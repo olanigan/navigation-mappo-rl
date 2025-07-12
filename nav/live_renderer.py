@@ -41,11 +41,15 @@ class SimulationWindow(arcade.Window):
         window_height: int = 800,
         target_fps: int = 30,
         record: bool = False,
+        headless: bool = False,
     ):
-        super().__init__(window_width, window_height, "Navigation Simulation")
+        super().__init__(
+            window_width, window_height, "Navigation Simulation", visible=not headless
+        )
         arcade.set_background_color(BACKGROUND_COLOR)
         self.current_state = None
         self.cursor_pos = (0.0, 0.0)
+        self.headless = headless
 
         # Set target FPS
         self.target_fps = target_fps
@@ -87,7 +91,33 @@ class SimulationWindow(arcade.Window):
         Receives a new state and schedules a redraw.
         """
         self.current_state = state
-        self.on_draw()
+
+        if self.headless:
+            # For headless rendering, just draw directly without events/flip
+            self.on_draw()
+        else:
+            # For interactive rendering, handle events and flip buffer
+            self.dispatch_events()
+            self.on_draw()
+            self.flip()
+
+    def get_rgb_array(self) -> np.ndarray:
+        """
+        Get the current frame as an RGB array.
+        """
+        try:
+            # Get the current frame as RGB data
+            image = arcade.get_image()
+            # Convert PIL image to numpy array
+            frame = np.array(image)
+            # Convert RGBA to RGB if necessary
+            if frame.shape[2] == 4:
+                frame = frame[:, :, :3]
+            return frame
+        except Exception as e:
+            print(f"Warning: Failed to capture RGB array: {e}")
+            # Return a black frame as fallback
+            return np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
     def on_draw(self):
         """
