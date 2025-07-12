@@ -13,7 +13,7 @@ class AgentState(BaseModel):
     lidar_observation: list[RayIntersectionOutput]
     fov_degrees: float
     max_range: float
-    goal_rectangle: Rectangle
+    goals: Circle
     goal_reached: bool
 
 

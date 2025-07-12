@@ -29,10 +29,9 @@ class Rectangle(BaseModel):
 
 class AgentConfig(BaseModel):
     start_pos: Vector2
-    goal_rectangle: Rectangle
+    goal_pos: Vector2
     radius: float = 0.02
     max_speed: float
-    preferred_speed: float
     spawn_time: float
     agent_col: Literal["blue", "green", "yellow", "red"] = "blue"
     max_range: float = 0.25
@@ -71,6 +70,7 @@ class EnvConfig(BaseModel):
     agents: List[AgentConfig]
     max_time: int
     num_rays: int = 60
+    goal_threshold: float = 0.02
 
 
 if __name__ == "__main__":
@@ -82,6 +82,5 @@ if __name__ == "__main__":
         start_pos=Vector2(x=0, y=0),
         goal_pos=Vector2(x=1, y=0),
         max_speed=0.5,
-        preferred_speed=0.2,
         spawn_time=0,
     )

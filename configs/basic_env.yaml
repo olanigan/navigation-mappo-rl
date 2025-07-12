@@ -1,5 +1,6 @@
 # Configuration for a basic environment with one agent and obstacles
 num_rays: 60
+goal_threshold: 0.02
 
 # Boundary configuration
 boundary:
@@ -15,16 +16,12 @@ agents:
   - start_pos:
       x: 0.5
       y: 0.25
-    goal_rectangle:
-      center:
-        x: 0.5
-        y: 0.85
-      width: 0.5
-      height: 0.1
+    goal_pos:
+      x: 0.5
+      y: 0.85
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210
-    preferred_speed: 0.2
+    fov_degrees: 210 
     spawn_time: 0.0
     max_range: 0.3
 

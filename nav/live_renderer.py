@@ -136,24 +136,19 @@ class SimulationWindow(arcade.Window):
             color = getattr(arcade.color, agent.color.upper())
 
             # Draw goal rectangle first (behind agent)
-            goal_x = agent.goal_rectangle.center.x * self.width
-            goal_y = agent.goal_rectangle.center.y * self.height
-            goal_width = agent.goal_rectangle.width * self.width
-            goal_height = agent.goal_rectangle.height * self.height
-            goal_rotation = (
-                -agent.goal_rectangle.rotation
-            )  # Arcade expects negative rotation
-            goal_rect = arcade.XYWH(goal_x, goal_y, goal_width, goal_height)
+            goal_x = agent.goals.center.x * self.width
+            goal_y = agent.goals.center.y * self.height
+            goal_radius = agent.goals.radius * self.width
 
             # Ensure proper color formatting
             goal_fill_color = (*AGENT_GOAL_COLOR[:3], 100)  # RGB + alpha
             goal_outline_color = AGENT_GOAL_COLOR[:3]  # RGB only for outline
 
-            arcade.draw_rect_filled(
-                goal_rect, goal_fill_color, goal_rotation
+            arcade.draw_circle_filled(
+                goal_x, goal_y, goal_radius, goal_fill_color
             )  # Semi-transparent fill
-            arcade.draw_rect_outline(
-                goal_rect, goal_outline_color, 3, goal_rotation
+            arcade.draw_circle_outline(
+                goal_x, goal_y, goal_radius, goal_outline_color, 3
             )  # Solid outline
 
             # Draw agent circle

@@ -328,7 +328,7 @@ def batch_ray_intersection_detailed(
     rays: np.ndarray,
     obstacles: List[Obstacle],
     boundaries: List[PolygonBoundaryConfig],
-    goal_rectangles: Optional[List[Optional[Rectangle]]] = None,
+    goals: Optional[List[Optional[Circle]]] = None,
     rays_per_agent: Optional[List[int]] = None,
 ) -> List[RayIntersectionOutput]:
     """
@@ -338,7 +338,7 @@ def batch_ray_intersection_detailed(
         rays: [N, 5] array of [origin_x, origin_y, dir_x, dir_y, length]
         obstacles: List of obstacle objects
         boundaries: List of boundary configurations
-        goal_rectangles: List of goal rectangles, one per agent (can contain None for agents without goals)
+        goals: List of goal circles, one per agent (can contain None for agents without goals)
         rays_per_agent: List of ray counts per agent to map rays to correct goal rectangles
 
     Returns:
@@ -468,12 +468,10 @@ def batch_ray_intersection_detailed(
                     )
 
     # Process goal rectangles (agent-specific)
-    if goal_rectangles is not None and rays_per_agent is not None:
+    if goals is not None and rays_per_agent is not None:
         ray_start_idx = 0
-        for agent_idx, (goal_rectangle, num_rays) in enumerate(
-            zip(goal_rectangles, rays_per_agent)
-        ):
-            if goal_rectangle is None:
+        for agent_idx, (goal, num_rays) in enumerate(zip(goals, rays_per_agent)):
+            if goal is None:
                 ray_start_idx += num_rays
                 continue
 
@@ -481,29 +479,27 @@ def batch_ray_intersection_detailed(
             agent_rays = rays[ray_start_idx : ray_start_idx + num_rays]
 
             # Convert goal rectangle to numpy array format for batch processing
-            goal_rectangle_array = np.array(
+            goal_circle_array = np.array(
                 [
                     [
-                        goal_rectangle.center.x,
-                        goal_rectangle.center.y,
-                        goal_rectangle.width,
-                        goal_rectangle.height,
-                        goal_rectangle.rotation,
+                        goal.center.x,
+                        goal.center.y,
+                        goal.radius,
                     ]
                 ]
             )  # [1, 5]
 
             # Check intersections for this agent's rays only
-            goal_rectangle_distances = batch_ray_rectangle_intersection(
-                agent_rays, goal_rectangle_array
+            goal_circle_distances = batch_ray_circle_intersection(
+                agent_rays, goal_circle_array
             )  # [num_rays, 1]
 
             # Update closest intersections for this agent's rays
             for i in range(num_rays):
                 global_ray_idx = ray_start_idx + i
-                min_dist = goal_rectangle_distances[
+                min_dist = goal_circle_distances[
                     i, 0
-                ]  # Get distance from the single goal rectangle
+                ]  # Get distance from the single goal circle
 
                 if min_dist < closest_distances[global_ray_idx]:
                     closest_distances[global_ray_idx] = min_dist

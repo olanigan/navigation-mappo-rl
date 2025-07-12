@@ -18,7 +18,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Create movies directory if recording
+    # Create movies directory if recording 
     if args.record:
         os.makedirs("movies", exist_ok=True)
         print("🎬 Recording enabled - will save to movies/footage.mp4")
@@ -53,10 +53,10 @@ def main():
             vel_y = cursor_y - agent_pos[1]
             vel = Vector2(x=vel_x, y=vel_y)
 
-        done = environment.step([vel])
+        _, rewards, done, _, _ = environment.step([vel])
         render_state = environment.get_render_state()
         window.render(render_state)
-        if done:
+        if all(done.values()):
             if args.record:
                 print("🎬 Simulation finished - finalizing recording...")
                 window.stop_recording()

@@ -19,10 +19,10 @@ class Agent:
     def __init__(self, agent_config: AgentConfig):
         self.config = agent_config
         self.pos = self.config.start_pos.to_numpy()
+        self.start_pos = self.pos.copy()
         self.radius = self.config.radius
         self.current_speed = 0.1
-        self.goal_rectangle = self.config.goal_rectangle
-        self.goal_pos = self.config.goal_rectangle.center.to_numpy()
+        self.goal_pos = self.config.goal_pos.to_numpy()
         _, self.direction = convert_to_polar(self.goal_pos - self.pos)
         self.response_time = 0.5
         self.active = True
@@ -30,36 +30,34 @@ class Agent:
         self.last_raw_lidar_observation = None
         self.goal_reached = False
 
-    def has_reached_goal(self):
-        return circle_rectangle_intersection(
-            self.pos,
-            self.radius,
-            self.goal_rectangle.center.to_numpy(),
-            self.goal_rectangle.width,
-            self.goal_rectangle.height,
-            self.goal_rectangle.rotation,
-        )
+    def has_reached_goal(self, goal_threshold: float = 0.02):
+        return np.linalg.norm(self.goal_pos - self.pos) < goal_threshold
 
-    def process_lidar_observation(self, lidar_observation: list[RayIntersectionOutput]):
-        rays = np.zeros((len(lidar_observation), 3))
-        for i in range(len(lidar_observation)):
-            ray_data = lidar_observation[i]
-            if not ray_data.intersects:
-                continue
+    def get_state_dict(self):
+        original_distance_to_goal = np.linalg.norm(self.goal_pos - self.start_pos)
+        current_distance_to_goal = np.linalg.norm(self.goal_pos - self.pos)
+        progress = (
+            original_distance_to_goal - current_distance_to_goal
+        ) / original_distance_to_goal
 
-            if ray_data.intersecting_with == "obstacle":
-                rays[i, 0] = self.config.max_range - ray_data.t
-            elif ray_data.intersecting_with == "boundary":
-                rays[i, 1] = self.config.max_range - ray_data.t
-            elif ray_data.intersecting_with == "agent":
-                rays[i, 2] = self.config.max_range - ray_data.t
+        goal_vector = self.goal_pos - self.pos
+        goal_vector = goal_vector / np.linalg.norm(goal_vector)
+        cosine_angle = goal_vector.dot(self.direction)
 
-        return rays
+        speed_ratio = self.current_speed / self.config.max_speed
 
-    def get_action(self, lidar_observation: list[RayIntersectionOutput]):
-        self.last_raw_lidar_observation = lidar_observation
-        processed_lidar_observation = self.process_lidar_observation(lidar_observation)
-        self.lidar_observation_history.append(processed_lidar_observation)
+        return {
+            "state_vector": [
+                progress,  # progress towards goal 0-1
+                cosine_angle,  # cosine of angle between goal vector and direction vector
+                speed_ratio,  # ratio of current speed to max speed
+                speed_ratio * cosine_angle,
+                current_distance_to_goal,
+            ],
+        }
+
+    def get_action(self, lidar_observation: np.ndarray):
+        self.lidar_observation_history.append(lidar_observation)
         return None  # TODO: Implement action selection
 
     def update_pos(self, delta_t: float = 1 / 30):
@@ -96,6 +94,14 @@ class Agent:
         self.current_speed = min(self.current_speed, self.config.max_speed)
 
 
+COLLIDING_WITH_TYPES = Literal["obstacle", "boundary", "agent"]
+
+
+class CollisionData(BaseModel):
+    is_colliding: bool = False
+    colliding_with: Optional[COLLIDING_WITH_TYPES] = None
+
+
 class Environment:
     def __init__(self, config: EnvConfig):
         self.config = config
@@ -106,6 +112,22 @@ class Environment:
         ]
         self.num_steps = 0
 
+    def calculate_reward(self, agent: Agent, collision_data: CollisionData):
+        if agent.goal_reached:
+            return 5
+
+        if collision_data.is_colliding:
+            return -1
+
+        goal_reward = agent.direction.dot(agent.goal_pos - agent.pos)
+        scale_goal_reward_with_speed = goal_reward * (
+            agent.current_speed / agent.config.max_speed
+        )
+
+        stay_alive_reward = -0.1
+
+        return scale_goal_reward_with_speed + stay_alive_reward
+
     def step(self, actions):
         assert len(actions) == len(self.agents)
         self.num_steps += 1
@@ -113,22 +135,85 @@ class Environment:
             agent.apply_target_velocity(action)
         for obs in self.obstacles:
             obs.update(DELTA_T)
+
+        collision_datas = []
         for agent in self.agents:
+            this_agent_collision_data = CollisionData()
             agent.update_pos(DELTA_T)
             if self.boundary.violating_boundary(agent):
                 agent.active = False
+                this_agent_collision_data.is_colliding = True
+                this_agent_collision_data.colliding_with = "boundary"
+
             for obs in self.obstacles:
                 if obs.check_collision(center=agent.pos, radius=agent.radius):
                     agent.active = False
-        done = all(
-            [(not agent.active) or (agent.goal_reached) for agent in self.agents]
-        )
+                    this_agent_collision_data.is_colliding = True
+                    this_agent_collision_data.colliding_with = "obstacle"
 
-        return done
+            # TODO: Check for collisions with other agents
+
+            collision_datas.append(this_agent_collision_data)
+
+        rewards = {
+            idx: self.calculate_reward(agent, collision_data)
+            for idx, (agent, collision_data) in enumerate(
+                zip(self.agents, collision_datas)
+            )
+        }
+
+        terminations = {
+            idx: (not agent.active) or (agent.goal_reached)
+            for idx, agent in enumerate(self.agents)
+        }
+
+        truncations = {idx: False for idx in range(len(self.agents))}
+
+        lidar_observations = self.get_lidar_observation()
+
+        for agent, lidar_observation in zip(self.agents, lidar_observations):
+            agent.last_raw_lidar_observation = lidar_observation
+
+        processed_lidar_observations = [
+            self.process_lidar_observation(agent.config.max_range, lidar_observation)
+            for agent, lidar_observation in zip(self.agents, lidar_observations)
+        ]
+
+        agent_state_dicts = [agent.get_state_dict() for agent in self.agents]
+
+        next_states = {
+            idx: {
+                **agent_state_dict,
+                "lidar": processed_lidar_observation,
+            }
+            for idx, (agent_state_dict, processed_lidar_observation) in enumerate(
+                zip(agent_state_dicts, processed_lidar_observations)
+            )
+        }
+
+        return next_states, rewards, terminations, truncations, {}
+
+    def process_lidar_observation(
+        self, max_range, lidar_observation: list[RayIntersectionOutput]
+    ):
+        rays = np.zeros((len(lidar_observation), 3))
+        for i in range(len(lidar_observation)):
+            ray_data = lidar_observation[i]
+            if not ray_data.intersects:
+                continue
+
+            if ray_data.intersecting_with == "obstacle":
+                rays[i, 0] = max_range - ray_data.t
+            elif ray_data.intersecting_with == "boundary":
+                rays[i, 1] = max_range - ray_data.t
+            elif ray_data.intersecting_with == "agent":
+                rays[i, 2] = max_range - ray_data.t
+
+        return rays
 
     def get_lidar_observation(self):
         all_rays = []
-        goal_rectangles = []
+        goals = []
         rays_per_agent = []
 
         for agent in self.agents:
@@ -140,7 +225,13 @@ class Environment:
                 agent.config.fov_degrees,
             )
             all_rays.extend(rays)
-            goal_rectangles.append(agent.goal_rectangle)
+
+            goals.append(
+                Circle(
+                    center=Vector2(x=agent.goal_pos[0], y=agent.goal_pos[1]),
+                    radius=self.config.goal_threshold,
+                )
+            )
             rays_per_agent.append(self.config.num_rays)
 
         all_rays = np.array(all_rays)
@@ -148,7 +239,7 @@ class Environment:
             all_rays,
             self.obstacles,
             [self.config.boundary],
-            goal_rectangles=goal_rectangles,
+            goals=goals,
             rays_per_agent=rays_per_agent,
         )
 
@@ -170,7 +261,10 @@ class Environment:
                 lidar_observation=agent.last_raw_lidar_observation,
                 fov_degrees=agent.config.fov_degrees,
                 max_range=agent.config.max_range,
-                goal_rectangle=agent.goal_rectangle,
+                goals=Circle(
+                    center=Vector2(x=agent.goal_pos[0], y=agent.goal_pos[1]),
+                    radius=self.config.goal_threshold,
+                ),
                 goal_reached=agent.goal_reached,
             )
             for agent in self.agents
