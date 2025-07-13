@@ -22,7 +22,7 @@ os.makedirs(f"models/{model_id}/checkpoints", exist_ok=True)
 os.makedirs(f"videos/{model_id}", exist_ok=True)
 os.makedirs(f"logs/{model_id}", exist_ok=True)
 
-config = yaml.safe_load(open("configs/basic_env.yaml"))
+config = yaml.safe_load(open("configs/moving_env.yaml"))
 
 env = Environment(config)
 
@@ -56,8 +56,9 @@ model = PPO(
     n_steps=1000,
     n_epochs=4,
     normalize_advantage=False,
-    ent_coef=0.02,
+    ent_coef=0.1,
 )
+
 
 eval_env = Environment(config)
 eval_env = ss.frame_stack_v1(eval_env, 3)
@@ -82,7 +83,7 @@ callbacks = [
         n_eval_episodes=10,
     ),
     InferenceCallback(
-        config_path="configs/basic_env.yaml",
+        config=config,
         inference_interval=25000,
         save_videos=True,
         video_dir=f"videos/{model_id}/training_progress",

@@ -2,9 +2,10 @@ import pettingzoo
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
+import random
 
 from .obstacles import PolygonBoundary, Obstacle
-from .utils import *
+from .utils import sample_point_in_rectangle, convert_to_polar
 from .config_models import *
 from .renderer_models import RenderState, AgentState, ObstacleState, BoundaryState
 from .obstacles import ObstacleFactory
@@ -32,7 +33,7 @@ class CollisionData(BaseModel):
 class Agent:
     def __init__(self, agent_config: AgentConfig, goal_threshold: float = 0.02):
         self.config = agent_config
-        self.pos = self.config.start_pos.to_numpy()
+        self.pos = self.config.start_pos.center.to_numpy()
         self.start_pos = self.pos.copy()
         self.radius = self.config.radius
         self.current_speed = 0.1
@@ -72,6 +73,8 @@ class Agent:
                 speed_ratio,  # ratio of current speed to max speed
                 speed_ratio * cosine_angle,
                 current_distance_to_goal,
+                goal_vector[0],
+                goal_vector[1],
             ],
         }
 
@@ -186,7 +189,7 @@ class Environment(pettingzoo.ParallelEnv):
 
     @property
     def agent_states_dim(self):
-        return 5
+        return 7
 
     @property
     def lidar_dim(self):
@@ -217,7 +220,12 @@ class Environment(pettingzoo.ParallelEnv):
 
         # Reset all agents to initial positions
         for agent in self.agents_dict.values():
-            agent.pos = agent.start_pos.copy()
+
+            if random.random() < 0.5:
+                agent.pos = sample_point_in_rectangle(agent.config.start_pos)
+            else:
+                agent.pos = agent.config.start_pos.center.to_numpy()
+
             agent.current_speed = 0.1
             _, agent.direction = convert_to_polar(agent.goal_pos - agent.pos)
             agent.active = True
@@ -292,6 +300,61 @@ class Environment(pettingzoo.ParallelEnv):
 
         return scale_goal_reward_with_speed + stay_alive_reward
 
+    def transition(self, actions: dict[str, np.ndarray] | np.ndarray):
+
+        # Apply actions to agents
+        for agent_id, action in zip(self.agents, actions):
+            agent = self.agents_dict[agent_id]
+            target_velocity = Vector2(
+                x=action.x * agent.config.max_speed,
+                y=action.y * agent.config.max_speed,
+            )
+            agent.apply_target_velocity(target_velocity)
+
+        # Update obstacles
+        for obs in self.obstacles:
+            obs.update(DELTA_T)
+
+        # Update agent positions and check collisions
+        collision_datas = []
+        for agent_id in self.agents:
+            agent = self.agents_dict[agent_id]
+            this_agent_collision_data = CollisionData()
+            agent.update_pos(DELTA_T)
+
+            if self.boundary.violating_boundary(agent):
+                agent.active = False
+                this_agent_collision_data.is_colliding = True
+                this_agent_collision_data.colliding_with = "boundary"
+
+            for obs in self.obstacles:
+                if obs.check_collision(center=agent.pos, radius=agent.radius):
+                    agent.active = False
+                    this_agent_collision_data.is_colliding = True
+                    this_agent_collision_data.colliding_with = "obstacle"
+
+            # TODO: Check for collisions with other agents
+            collision_datas.append(this_agent_collision_data)
+
+            # Calculate terminations and truncations
+            terminations = {}
+            truncations = {}
+            for agent_id in self.agents:
+                agent = self.agents_dict[agent_id]
+                terminations[agent_id] = (
+                    (not agent.active)
+                    or agent.goal_reached
+                    or (
+                        len(agent.recent_speeds) > 0
+                        and np.mean(agent.recent_speeds) < 0.01
+                    )
+                )
+                truncations[agent_id] = (
+                    False if self.num_steps < self.config.max_time else True
+                )
+
+        return collision_datas, terminations, truncations
+
     def step(self, actions: dict[str, np.ndarray] | np.ndarray):
         """Execute one step of the environment."""
         # Handle both dictionary format (original) and vectorized format (after SuperSuit wrapping)
@@ -331,62 +394,22 @@ class Environment(pettingzoo.ParallelEnv):
 
         self.num_steps += 1
 
-        # Apply actions to agents
-        for agent_id, action in zip(self.agents, processed_actions):
-            agent = self.agents_dict[agent_id]
-            target_velocity = Vector2(
-                x=action.x * agent.config.max_speed,
-                y=action.y * agent.config.max_speed,
+        for i in range(self.config.repeat_steps):
+            collision_datas, terminations, truncations = self.transition(
+                processed_actions
             )
-            agent.apply_target_velocity(target_velocity)
 
-        # Update obstacles
-        for obs in self.obstacles:
-            obs.update(DELTA_T)
+            if any(terminations.values()):
+                break
 
-        # Update agent positions and check collisions
-        collision_datas = []
-        for agent_id in self.agents:
-            agent = self.agents_dict[agent_id]
-            this_agent_collision_data = CollisionData()
-            agent.update_pos(DELTA_T)
-
-            if self.boundary.violating_boundary(agent):
-                agent.active = False
-                this_agent_collision_data.is_colliding = True
-                this_agent_collision_data.colliding_with = "boundary"
-
-            for obs in self.obstacles:
-                if obs.check_collision(center=agent.pos, radius=agent.radius):
-                    agent.active = False
-                    this_agent_collision_data.is_colliding = True
-                    this_agent_collision_data.colliding_with = "obstacle"
-
-            # TODO: Check for collisions with other agents
-            collision_datas.append(this_agent_collision_data)
+            if any(truncations.values()):
+                break
 
         # Calculate rewards
         rewards = {}
         for agent_id, collision_data in zip(self.agents, collision_datas):
             agent = self.agents_dict[agent_id]
             rewards[agent_id] = self.calculate_reward(agent, collision_data)
-
-        # Calculate terminations and truncations
-        terminations = {}
-        truncations = {}
-        for agent_id in self.agents:
-            agent = self.agents_dict[agent_id]
-            terminations[agent_id] = (
-                (not agent.active)
-                or agent.goal_reached
-                or (
-                    len(agent.recent_speeds) > 0 and np.mean(agent.recent_speeds) < 0.01
-                )
-            )
-            truncations[agent_id] = (
-                False if self.num_steps < self.config.max_time else True
-            )
-
         # Get next observations
         observations = self._get_observations()
 

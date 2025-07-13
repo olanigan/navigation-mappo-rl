@@ -54,8 +54,11 @@ class InferenceCallback(BaseCallback):
 
         # Check if it's time to run inference
         if current_step - self.last_inference_step >= self.inference_interval:
-            self._run_inference(current_step)
-            self.last_inference_step = current_step
+            try:
+                self._run_inference(current_step)
+                self.last_inference_step = current_step
+            except Exception as e:
+                print(f"Error running inference: {e}")
 
         return True
 

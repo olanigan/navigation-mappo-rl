@@ -1,5 +1,6 @@
 from typing import Tuple
 import numpy as np
+from .config_models import Rectangle
 
 
 def convert_to_polar(a: np.ndarray) -> Tuple[float, np.ndarray]:
@@ -116,3 +117,18 @@ def circle_rectangle_intersection(
 
     # Check if circle intersects (distance <= radius)
     return distance <= circle_radius
+
+
+def sample_point_in_rectangle(rectangle: Rectangle) -> np.ndarray:
+    return np.array(
+        [
+            np.random.uniform(
+                rectangle.center.x - rectangle.width / 2,
+                rectangle.center.x + rectangle.width / 2,
+            ),
+            np.random.uniform(
+                rectangle.center.y - rectangle.height / 2,
+                rectangle.center.y + rectangle.height / 2,
+            ),
+        ]
+    )

@@ -28,7 +28,7 @@ class Rectangle(BaseModel):
 
 
 class AgentConfig(BaseModel):
-    start_pos: Vector2
+    start_pos: Rectangle
     goal_pos: Vector2
     radius: float = 0.02
     max_speed: float
@@ -71,6 +71,7 @@ class EnvConfig(BaseModel):
     max_time: int
     num_rays: int = 60
     goal_threshold: float = 0.02
+    repeat_steps: int = 4
 
 
 if __name__ == "__main__":
@@ -79,7 +80,7 @@ if __name__ == "__main__":
     print(vector2.model_dump())
 
     agent = AgentConfig(
-        start_pos=Vector2(x=0, y=0),
+        start_pos=Rectangle(center=Vector2(x=0, y=0), width=0.2, height=0.02),
         goal_pos=Vector2(x=1, y=0),
         max_speed=0.5,
         spawn_time=0,

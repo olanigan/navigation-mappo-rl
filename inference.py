@@ -6,9 +6,11 @@ from stable_baselines3.common.vec_env import VecVideoRecorder
 from moviepy import ImageSequenceClip
 import os
 import time
+import random
+import numpy as np
 
 
-def inference(model, config, video_path=None, mode="rgb_array"):
+def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
     """
     Run inference with a trained model.
 
@@ -27,34 +29,38 @@ def inference(model, config, video_path=None, mode="rgb_array"):
     env = Environment(config, render_mode=mode)
     env = ss.frame_stack_v1(env, 3)
     env = ss.pettingzoo_env_to_vec_env_v1(env)
-    obs, _ = env.reset()
-    episode_reward = 0
-    episode_length = 0
+
+    all_episode_rewards = []
+    all_episode_lengths = []
     frames = []
 
-    while True:
-        action, _ = model.predict(obs, deterministic=True)
-        # if episode_length > 100:
-        #     action = [[-1, 1]]
-        # else:
-        #     action = [[1, 1]]
-        obs, reward, terminated, truncated, _ = env.step(action)
-        episode_reward += reward[0]
-        episode_length += 1
+    for i in range(num_episodes):
+        obs, _ = env.reset()
+        episode_reward = 0
+        episode_length = 0
 
-        # if mode == "human":
-        #    time.sleep(1 / 30)
+        while True:
+            action, _ = model.predict(obs, deterministic=True)
 
-        if mode == "rgb_array":
-            video_path = "temp.mp4" if video_path is None else video_path
+            obs, reward, terminated, truncated, _ = env.step(action)
+            episode_reward += reward[0]
+            episode_length += 1
 
-        if video_path:
-            frame = env.render()
-            frames.append(frame)
+            # if mode == "human":
+            #     time.sleep(1 / 30)
 
-        if terminated or truncated:
-            break
+            if mode == "rgb_array":
+                video_path = "temp.mp4" if video_path is None else video_path
 
+            if video_path:
+                frame = env.render()
+                frames.append(frame)
+
+            if terminated or truncated:
+                break
+
+            all_episode_rewards.append(episode_reward)
+            all_episode_lengths.append(episode_length)
     env.close()
     del env
 
@@ -64,15 +70,17 @@ def inference(model, config, video_path=None, mode="rgb_array"):
         clip = ImageSequenceClip(frames, fps=30)
         clip.write_videofile(video_path)
 
-    return episode_reward, episode_length
+    return np.mean(all_episode_rewards), np.mean(all_episode_lengths)
 
 
 if __name__ == "__main__":
-    mode = "none"
-    model_path = "./models/m3/best_model/best_model.zip"
+    mode = "human"
+    model_path = "./models/m5/best_model/best_model.zip"
     config = yaml.safe_load(open("configs/basic_env.yaml"))
     video_path = None  # "videos/inference_demo.mp4"
-    episode_reward, episode_length = inference(
-        model_path, config, video_path, mode=mode
-    )
+
+    for i in range(10):
+        episode_reward, episode_length = inference(
+            model_path, config, video_path, mode=mode
+        )
     print(f"Episode reward: {episode_reward}, Episode length: {episode_length}")
