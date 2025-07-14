@@ -29,7 +29,7 @@ class Rectangle(BaseModel):
 
 class AgentConfig(BaseModel):
     start_pos: Rectangle
-    goal_pos: Vector2
+    goal_pos: Rectangle
     radius: float = 0.02
     max_speed: float
     spawn_time: float
@@ -72,6 +72,7 @@ class EnvConfig(BaseModel):
     num_rays: int = 60
     goal_threshold: float = 0.02
     repeat_steps: int = 4
+    num_agents_per_group: int = 1
 
 
 if __name__ == "__main__":

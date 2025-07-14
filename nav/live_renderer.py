@@ -28,6 +28,7 @@ RAY_BOUNDARY_HIT_COLOR = arcade.color.DARK_ORANGE
 RAY_GOAL_HIT_COLOR = arcade.color.LIME_GREEN
 RAY_MISS_COLOR = arcade.color.LIGHT_STEEL_BLUE
 RAY_INTERSECTION_MARKER_COLOR = arcade.color.WHITE
+RAY_AGENT_HIT_COLOR = arcade.color.LIGHT_CORAL
 
 
 class SimulationWindow(arcade.Window):
@@ -152,9 +153,10 @@ class SimulationWindow(arcade.Window):
                 arcade.draw_rect_filled(rect, OBSTACLE_COLOR, rotation)
                 arcade.draw_rect_outline(rect, OBSTACLE_BORDER_COLOR, 4, rotation)
 
-        # --- Draw Rays (behind agents) ---
-        for agent in self.current_state.agents:
-            self._draw_agent_rays(agent)
+        if len(self.current_state.agents) < 10:
+            # --- Draw Rays (behind agents) ---
+            for agent in self.current_state.agents:
+                self._draw_agent_rays(agent)
 
         # --- Draw Agents (on top of rays) ---
         for agent in self.current_state.agents:
@@ -237,6 +239,10 @@ class SimulationWindow(arcade.Window):
                 alpha = 180
             elif ray_result.intersecting_with == "goal":
                 ray_color = RAY_GOAL_HIT_COLOR
+                line_width = 3
+                alpha = 255
+            elif ray_result.intersecting_with == "agent":
+                ray_color = RAY_AGENT_HIT_COLOR
                 line_width = 3
                 alpha = 255
             else:

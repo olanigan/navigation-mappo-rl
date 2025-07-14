@@ -37,7 +37,8 @@ class Agent:
         self.start_pos = self.pos.copy()
         self.radius = self.config.radius
         self.current_speed = 0.1
-        self.goal_pos = self.config.goal_pos.to_numpy()
+        self.goal_sample_area = self.config.goal_pos
+        self.goal_pos = self.config.goal_pos.center.to_numpy()
         _, self.direction = convert_to_polar(self.goal_pos - self.pos)
         self.response_time = 2
         self.active = True
@@ -129,9 +130,14 @@ class Environment(pettingzoo.ParallelEnv):
 
         self.config = config
         self.boundary = PolygonBoundary(config.boundary)
+
+        agent_configs = self.preprocess_agent_configs(
+            config.agents, config.num_agents_per_group
+        )
+
         self.agents_dict = {
             f"agent_{i}": Agent(agent_config, goal_threshold=self.config.goal_threshold)
-            for i, agent_config in enumerate(config.agents)
+            for i, agent_config in enumerate(agent_configs)
         }
         self.obstacles = [
             ObstacleFactory.create(obstacle) for obstacle in config.obstacles
@@ -155,6 +161,42 @@ class Environment(pettingzoo.ParallelEnv):
                 target_fps=30, record=False, headless=headless
             )
 
+    def preprocess_agent_configs(
+        self, agent_configs: List[AgentConfig], num_agents_per_group: int
+    ):
+        """Preprocess agent configs to create multiple agents per group."""
+        processed_configs = []
+
+        for agent_config in agent_configs:
+            start_rect = agent_config.start_pos
+            width = start_rect.width
+            middle = start_rect.center.x
+            spacing = width / num_agents_per_group
+
+            for i in range(num_agents_per_group):
+                new_agent_config = agent_config.model_copy()
+
+                # Place agents in pattern: middle, middle-1*spacing, middle+1*spacing, middle-2*spacing, middle+2*spacing, etc.
+                if i == 0:
+                    x_offset = 0  # First agent at middle
+                elif i % 2 == 1:  # Odd indices go left
+                    x_offset = -((i + 1) // 2) * spacing
+                else:  # Even indices > 0 go right
+                    x_offset = (i // 2) * spacing
+
+                this_center = Vector2(
+                    x=middle + x_offset,
+                    y=start_rect.center.y,
+                )
+                new_rect = Rectangle(
+                    center=this_center,
+                    width=(width / num_agents_per_group - new_agent_config.radius * 2),
+                    height=start_rect.height,
+                )
+                new_agent_config.start_pos = new_rect
+                processed_configs.append(new_agent_config)
+        return processed_configs
+
     def _setup_spaces(self):
         """Setup observation and action spaces for all agents."""
         # Action space: 2D velocity vector (vx, vy)
@@ -163,21 +205,21 @@ class Environment(pettingzoo.ParallelEnv):
 
         # Observation space: state vector + lidar readings
         # State vector: [progress, cosine_angle, speed_ratio, speed_ratio * cosine_angle, distance_to_goal]
-        state_dim = 5
+        state_dim = self.agent_states_dim
         lidar_dim = (
             self.config.num_rays * 3
         )  # 3 channels per ray (obstacle, boundary, agent)
 
         obs_low = np.concatenate(
             [
-                np.array([-1.0, -1.0, 0.0, -1.0, 0.0]),  # state vector bounds
+                np.array([-1] * state_dim),  # state vector bounds
                 np.zeros(lidar_dim),  # lidar readings are non-negative
             ]
         )
         obs_high = np.concatenate(
             [
                 np.array(
-                    [1.0, 1.0, 1.0, 1.0, 1]
+                    [1] * state_dim
                 ),  # state vector bounds, externally guaranteed distance max = 1
                 np.full(lidar_dim, max_speed),  # max lidar range
             ]
@@ -221,11 +263,8 @@ class Environment(pettingzoo.ParallelEnv):
         # Reset all agents to initial positions
         for agent in self.agents_dict.values():
 
-            if random.random() < 0.5:
-                agent.pos = sample_point_in_rectangle(agent.config.start_pos)
-            else:
-                agent.pos = agent.config.start_pos.center.to_numpy()
-
+            agent.pos = sample_point_in_rectangle(agent.config.start_pos)
+            agent.goal_pos = sample_point_in_rectangle(agent.goal_sample_area)
             agent.current_speed = 0.1
             _, agent.direction = convert_to_polar(agent.goal_pos - agent.pos)
             agent.active = True
@@ -269,16 +308,13 @@ class Environment(pettingzoo.ParallelEnv):
         ]
 
         observations = {}
-        for agent_id in self.agents:
+        for agent_idx, agent_id in enumerate(self.agents):
             agent = self.agents_dict[agent_id]
-            agent_idx = list(self.agents_dict.keys()).index(agent_id)
-
             state_dict = agent.get_state_dict()
             state_vector = np.array(state_dict["state_vector"], dtype=np.float32)
             lidar_vector = (
                 processed_lidar_observations[agent_idx].flatten().astype(np.float32)
             )
-
             observations[agent_id] = np.concatenate([state_vector, lidar_vector])
 
         return observations
@@ -301,6 +337,10 @@ class Environment(pettingzoo.ParallelEnv):
         return scale_goal_reward_with_speed + stay_alive_reward
 
     def transition(self, actions: dict[str, np.ndarray] | np.ndarray):
+
+        terminations = {}
+        truncations = {}
+        collision_datas = []
 
         # Apply actions to agents
         for agent_id, action in zip(self.agents, actions):
@@ -334,11 +374,19 @@ class Environment(pettingzoo.ParallelEnv):
                     this_agent_collision_data.colliding_with = "obstacle"
 
             # TODO: Check for collisions with other agents
+            for other_agent_id in self.agents:
+                if other_agent_id == agent_id:
+                    continue
+                other_agent = self.agents_dict[other_agent_id]
+                if np.linalg.norm(other_agent.pos - agent.pos) < (
+                    agent.radius + other_agent.radius
+                ):
+                    agent.active = False
+                    this_agent_collision_data.is_colliding = True
+                    this_agent_collision_data.colliding_with = "agent"
+
             collision_datas.append(this_agent_collision_data)
 
-            # Calculate terminations and truncations
-            terminations = {}
-            truncations = {}
             for agent_id in self.agents:
                 agent = self.agents_dict[agent_id]
                 terminations[agent_id] = (
@@ -528,6 +576,16 @@ class Environment(pettingzoo.ParallelEnv):
             self.obstacles,
             [self.config.boundary],
             goals=goals,
+            agents=[
+                Circle(
+                    center=Vector2(
+                        x=self.agents_dict[agent].pos[0],
+                        y=self.agents_dict[agent].pos[1],
+                    ),
+                    radius=self.agents_dict[agent].radius,
+                )
+                for agent in self.agents
+            ],
             rays_per_agent=rays_per_agent,
         )
 

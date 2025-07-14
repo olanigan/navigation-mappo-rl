@@ -5,11 +5,21 @@ from typing import Union
 from .config_models import *
 from .utils import *
 
+OBSTACLE_NOISE = 0.1
+
+
+def get_random_noise() -> float:
+    return np.random.uniform(-OBSTACLE_NOISE, OBSTACLE_NOISE)
+
 
 class Obstacle(ABC):
     def __init__(self, config: ObstacleConfig):
         self.config = config
         self.schedule = config.schedule
+
+    @abstractmethod
+    def reset(self):
+        pass
 
     @abstractmethod
     def check_collision(self, center, radius) -> bool:
@@ -39,10 +49,20 @@ class RectangleObstacle(Obstacle):
         shape = config.shape
         if not isinstance(shape, Rectangle):
             return
+        self.config = config
         self.center = shape.center.to_numpy()
         self.width = shape.width
         self.height = shape.height
         self.rotation = shape.rotation
+
+    def reset(self):
+        shape = self.config.shape
+        self.center = shape.center.to_numpy() + np.array(
+            [get_random_noise(), get_random_noise()]
+        )
+        self.width = shape.width + get_random_noise()
+        self.height = shape.height + get_random_noise()
+        self.rotation = shape.rotation + np.random.uniform(-10, 10)
 
     def get_current_state(self):
         return Rectangle(
@@ -58,12 +78,16 @@ class RectangleObstacle(Obstacle):
 
         if self.schedule.direction is not None and self.schedule.speed is not None:
             self.center += (
-                self.schedule.speed * self.schedule.direction.to_numpy() * delta_t
+                (self.schedule.speed + get_random_noise())
+                * self.schedule.direction.to_numpy()
+                * delta_t
             )
 
         if self.schedule.angular_speed is not None:
             # Angular speed is in degrees per second, convert to degrees per frame
-            self.rotation += self.schedule.angular_speed * delta_t
+            self.rotation += (
+                self.schedule.angular_speed + get_random_noise()
+            ) * delta_t
 
         self._handle_boundary_conditions()
 
@@ -126,6 +150,13 @@ class CircleObstacle(Obstacle):
             return
         self.center = shape_config.center.to_numpy()
         self.radius = shape_config.radius
+
+    def reset(self):
+        shape = self.config.shape
+        self.center = shape.center.to_numpy() + np.array(
+            [get_random_noise(), get_random_noise()]
+        )
+        self.radius = shape.radius + get_random_noise()
 
     def get_current_state(self):
         return Circle(

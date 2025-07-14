@@ -20,8 +20,11 @@ agents:
       width: 0.5
       height: 0.02
     goal_pos:
-      x: 0.5
-      y: 0.85
+      center:
+        x: 0.5
+        y: 0.85
+      width: 0.5
+      height: 0.02
     radius: 0.02
     max_speed: 0.2
     fov_degrees: 210 

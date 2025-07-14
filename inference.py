@@ -26,8 +26,11 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
     if isinstance(model, str):
         model = PPO.load(model)
 
+    config["repeat_steps"] = 2
+
     env = Environment(config, render_mode=mode)
-    env = ss.frame_stack_v1(env, 3)
+    env = ss.frame_stack_v1(env, 4)
+    env = ss.black_death_v3(env)
     env = ss.pettingzoo_env_to_vec_env_v1(env)
 
     all_episode_rewards = []
@@ -46,8 +49,8 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
             episode_reward += reward[0]
             episode_length += 1
 
-            # if mode == "human":
-            #     time.sleep(1 / 30)
+            if mode == "human":
+                time.sleep(1 / 15)
 
             if mode == "rgb_array":
                 video_path = "temp.mp4" if video_path is None else video_path
@@ -56,7 +59,7 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
                 frame = env.render()
                 frames.append(frame)
 
-            if terminated or truncated:
+            if any(terminated) or any(truncated):
                 break
 
             all_episode_rewards.append(episode_reward)
@@ -75,12 +78,11 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
 
 if __name__ == "__main__":
     mode = "human"
-    model_path = "./models/m5/best_model/best_model.zip"
-    config = yaml.safe_load(open("configs/basic_env.yaml"))
+    model_path = "./models/mm1/checkpoints/ppo_model_480000_steps.zip"  # "./models/mm1/best_model/best_model.zip"
+    config = yaml.safe_load(open("configs/moving_env_marl.yaml"))
     video_path = None  # "videos/inference_demo.mp4"
 
-    for i in range(10):
-        episode_reward, episode_length = inference(
-            model_path, config, video_path, mode=mode
-        )
+    episode_reward, episode_length = inference(
+        model_path, config, video_path, num_episodes=5, mode=mode
+    )
     print(f"Episode reward: {episode_reward}, Episode length: {episode_length}")

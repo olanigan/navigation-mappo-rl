@@ -13,13 +13,16 @@ class ObservationEncoder(BaseFeaturesExtractor):
         agent_states_dim: int,
         lidar_dim: int,
         history_length: int,
+        objects: int,
         features_dim: int = 256,
     ):
         super().__init__(observation_space, features_dim)
 
+        channels = history_length * objects
+
         self.cnn_1d = nn.Sequential(
             nn.Conv1d(
-                history_length,
+                channels,
                 64,
                 kernel_size=8,
                 stride=4,
@@ -40,12 +43,7 @@ class ObservationEncoder(BaseFeaturesExtractor):
 
         # Compute shape by doing one forward pass
         with torch.no_grad():
-            sample_obs = (
-                torch.as_tensor(observation_space.sample()).float().unsqueeze(0)
-            )
-            sample_obs = sample_obs.reshape(1, history_length, -1)[
-                :, :, agent_states_dim:
-            ]
+            sample_obs = torch.zeros(1, channels, lidar_dim)
             n_flatten = self.cnn_1d(sample_obs).shape[1]
 
         self.history_length = history_length
@@ -59,6 +57,7 @@ class ObservationEncoder(BaseFeaturesExtractor):
         observations = observations.reshape(batch_size, self.history_length, -1)
 
         lidar_observations = observations[:, :, self.agent_states_dim :]
+        lidar_observations = lidar_observations.reshape(batch_size, -1, self.lidar_dim)
         agent_observations = observations[:, :, : self.agent_states_dim].flatten(
             start_dim=1
         )

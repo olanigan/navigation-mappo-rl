@@ -324,11 +324,70 @@ def batch_ray_intersection(
     return min_distances
 
 
+def batch_ray_agent_intersection(
+    rays: np.ndarray,
+    agents: List[Circle],
+    rays_per_agent: List[int],
+) -> np.ndarray:
+    """
+    Vectorized ray-agent intersection that excludes self-intersection.
+
+    Args:
+        rays: [N, 5] array of [origin_x, origin_y, dir_x, dir_y, length]
+        agents: List of agent circles
+        rays_per_agent: List of ray counts per agent to map rays to agents
+
+    Returns:
+        distances: [N] array of closest intersection distances for each ray
+    """
+    if len(rays) == 0 or len(agents) == 0:
+        return np.full(len(rays), np.inf)
+
+    N = len(rays)
+    min_distances = np.full(N, np.inf)
+
+    ray_start_idx = 0
+    for agent_idx, num_rays in enumerate(rays_per_agent):
+        # Get rays for this specific agent
+        agent_rays = rays[ray_start_idx : ray_start_idx + num_rays]
+
+        # Create list of all other agents (excluding current agent)
+        other_agents = [agent for i, agent in enumerate(agents) if i != agent_idx]
+
+        if other_agents:
+            # Convert other agents to numpy array format for batch processing
+            other_agents_array = np.array(
+                [
+                    [agent.center.x, agent.center.y, agent.radius]
+                    for agent in other_agents
+                ]
+            )  # [M_other_agents, 3]
+
+            # Check intersections for this agent's rays against all other agents
+            agent_distances = batch_ray_circle_intersection(
+                agent_rays, other_agents_array
+            )  # [num_rays, M_other_agents]
+
+            # Find minimum distance for each ray among all other agents
+            min_agent_distances = np.min(agent_distances, axis=1)  # [num_rays]
+
+            # Update global distances array
+            global_indices = slice(ray_start_idx, ray_start_idx + num_rays)
+            min_distances[global_indices] = np.minimum(
+                min_distances[global_indices], min_agent_distances
+            )
+
+        ray_start_idx += num_rays
+
+    return min_distances
+
+
 def batch_ray_intersection_detailed(
     rays: np.ndarray,
     obstacles: List[Obstacle],
     boundaries: List[PolygonBoundaryConfig],
     goals: Optional[List[Optional[Circle]]] = None,
+    agents: Optional[List[Circle]] = None,
     rays_per_agent: Optional[List[int]] = None,
 ) -> List[RayIntersectionOutput]:
     """
@@ -512,6 +571,50 @@ def batch_ray_intersection_detailed(
                     closest_intersections[global_ray_idx] = Vector2(
                         x=intersection_point[0], y=intersection_point[1]
                     )
+
+            ray_start_idx += num_rays
+
+    # Process agents (exclude self-intersection)
+    if agents is not None and rays_per_agent is not None:
+        ray_start_idx = 0
+        for agent_idx, num_rays in enumerate(rays_per_agent):
+            # Get rays for this specific agent
+            agent_rays = rays[ray_start_idx : ray_start_idx + num_rays]
+
+            # Create list of all other agents (excluding current agent)
+            other_agents = [agent for i, agent in enumerate(agents) if i != agent_idx]
+
+            if other_agents:
+                # Convert other agents to numpy array format for batch processing
+                other_agents_array = np.array(
+                    [
+                        [agent.center.x, agent.center.y, agent.radius]
+                        for agent in other_agents
+                    ]
+                )  # [M_other_agents, 3]
+
+                # Check intersections for this agent's rays against all other agents
+                agent_distances = batch_ray_circle_intersection(
+                    agent_rays, other_agents_array
+                )  # [num_rays, M_other_agents]
+
+                # Update closest intersections for this agent's rays
+                for i in range(num_rays):
+                    global_ray_idx = ray_start_idx + i
+                    min_idx = np.argmin(agent_distances[i])
+                    min_dist = agent_distances[i, min_idx]
+
+                    if min_dist < closest_distances[global_ray_idx]:
+                        closest_distances[global_ray_idx] = min_dist
+                        intersecting_with[global_ray_idx] = "agent"
+
+                        # Calculate intersection point
+                        ray_origin = rays[global_ray_idx, :2]
+                        ray_direction = rays[global_ray_idx, 2:4]
+                        intersection_point = ray_origin + ray_direction * min_dist
+                        closest_intersections[global_ray_idx] = Vector2(
+                            x=intersection_point[0], y=intersection_point[1]
+                        )
 
             ray_start_idx += num_rays
 

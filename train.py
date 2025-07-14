@@ -16,19 +16,23 @@ from callbacks import InferenceCallback
 import sys
 
 model_id = sys.argv[1]
+config_file = sys.argv[2]
+
 os.makedirs(f"models/{model_id}", exist_ok=True)
 os.makedirs(f"models/{model_id}/best_model", exist_ok=True)
 os.makedirs(f"models/{model_id}/checkpoints", exist_ok=True)
 os.makedirs(f"videos/{model_id}", exist_ok=True)
 os.makedirs(f"logs/{model_id}", exist_ok=True)
 
-config = yaml.safe_load(open("configs/moving_env.yaml"))
+config = yaml.safe_load(open(config_file))
 
 env = Environment(config)
-
+history_length = 4
+lidar_dim = env.config.num_rays
 agent_states_dim = env.agent_states_dim
-lidar_dim = env.lidar_dim
-env = ss.frame_stack_v1(env, 3)
+
+env = ss.frame_stack_v1(env, history_length)
+env = ss.black_death_v3(env)
 env = ss.pettingzoo_env_to_vec_env_v1(env)
 env = ss.concat_vec_envs_v1(env, 8, base_class="stable_baselines3")
 
@@ -40,7 +44,8 @@ policy_kwargs = dict(
     features_extractor_kwargs=dict(
         agent_states_dim=agent_states_dim,
         lidar_dim=lidar_dim,
-        history_length=3,
+        history_length=history_length,
+        objects=3,
     ),
 )
 
@@ -61,7 +66,8 @@ model = PPO(
 
 
 eval_env = Environment(config)
-eval_env = ss.frame_stack_v1(eval_env, 3)
+eval_env = ss.frame_stack_v1(eval_env, history_length)
+eval_env = ss.black_death_v3(eval_env)
 eval_env = ss.pettingzoo_env_to_vec_env_v1(eval_env)
 eval_env = ss.concat_vec_envs_v1(eval_env, 1, base_class="stable_baselines3")
 
@@ -69,7 +75,7 @@ eval_env = ss.concat_vec_envs_v1(eval_env, 1, base_class="stable_baselines3")
 callbacks = [
     # Regular model checkpointing
     CheckpointCallback(
-        save_freq=10000,
+        save_freq=200,
         save_path=f"models/{model_id}/checkpoints/",
         name_prefix="ppo_model",
     ),
@@ -77,7 +83,7 @@ callbacks = [
         eval_env,
         best_model_save_path=f"models/{model_id}/best_model/",
         log_path=f"logs/{model_id}",
-        eval_freq=10000,
+        eval_freq=200,
         deterministic=True,
         render=False,
         n_eval_episodes=10,
