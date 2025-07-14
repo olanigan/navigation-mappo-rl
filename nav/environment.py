@@ -76,6 +76,8 @@ class Agent:
                 current_distance_to_goal,
                 goal_vector[0],
                 goal_vector[1],
+                self.goal_pos[0] - self.pos[0],
+                self.goal_pos[1] - self.pos[1],
             ],
         }
 
@@ -120,7 +122,7 @@ class Agent:
 
 
 class Environment(pettingzoo.ParallelEnv):
-    metadata = {"render_modes": ["human", "rgb_array"], "name": "navigation_v0"}
+    metadata = {"render_modes": ["human", "rgb_array", "none"], "name": "navigation_v0"}
 
     def __init__(
         self, config: dict[str, Any] | EnvConfig, render_mode: Optional[str] = None
@@ -139,6 +141,10 @@ class Environment(pettingzoo.ParallelEnv):
             f"agent_{i}": Agent(agent_config, goal_threshold=self.config.goal_threshold)
             for i, agent_config in enumerate(agent_configs)
         }
+
+        self.state_dim = len(
+            next(iter(self.agents_dict.values())).get_state_dict()["state_vector"]
+        )
         self.obstacles = [
             ObstacleFactory.create(obstacle) for obstacle in config.obstacles
         ]
@@ -231,7 +237,7 @@ class Environment(pettingzoo.ParallelEnv):
 
     @property
     def agent_states_dim(self):
-        return 7
+        return self.state_dim
 
     @property
     def lidar_dim(self):

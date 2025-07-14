@@ -4,7 +4,7 @@ Custom callbacks for training.
 
 import os
 from stable_baselines3.common.callbacks import BaseCallback
-from inference import inference
+from inference import inference, make_eval_env
 
 
 class InferenceCallback(BaseCallback):
@@ -67,10 +67,10 @@ class InferenceCallback(BaseCallback):
         Run inference and handle logging.
         """
         video_path = os.path.join(self.video_dir, f"inference_step_{current_step}.mp4")
-
+        env = make_eval_env(self.config, 4)
         # Run inference with current model
         episode_reward, episode_length = inference(
-            model=self.model, config=self.config, video_path=video_path
+            env=env, model=self.model, video_path=video_path
         )
         print(
             f"Inference at step {current_step}: reward={episode_reward}, length={episode_length}, video_path={video_path}"

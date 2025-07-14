@@ -1,0 +1,1 @@
+{"model_dir": "models/CartPole-v0", "state_dim": 4, "action_dim": 2, "batch_size": 128, "epochs": 2, "lr": 0.003, "gamma": 0.995, "entropy_coef": 5, "num_trains": 1}

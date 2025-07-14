@@ -1,8 +1,6 @@
 import yaml
-from stable_baselines3 import PPO
 from nav.environment import Environment
 import supersuit as ss
-from stable_baselines3.common.vec_env import VecVideoRecorder
 from moviepy import ImageSequenceClip
 import os
 import time
@@ -10,28 +8,26 @@ import random
 import numpy as np
 
 
-def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
+def make_eval_env(config, history_length):
+    eval_env = Environment(config, render_mode="rgb_array")
+    eval_env = ss.frame_stack_v1(eval_env, history_length)
+    # eval_env = ss.black_death_v3(eval_env)
+    eval_env = ss.pettingzoo_env_to_vec_env_v1(eval_env)
+    return eval_env
+
+
+def inference(env, model, video_path=None, num_episodes=5, mode="rgb_array"):
     """
     Run inference with a trained model.
 
     Args:
-        model: Either a PPO model object or a string path to a saved model
+        model: A PPO model
         config_path: Path to the config YAML file
         video_path: Optional path to save video. If None, no video is saved.
 
     Returns:
         tuple: (episode_reward, episode_length)
     """
-    # Load model if path is provided
-    if isinstance(model, str):
-        model = PPO.load(model)
-
-    config["repeat_steps"] = 2
-
-    env = Environment(config, render_mode=mode)
-    env = ss.frame_stack_v1(env, 4)
-    env = ss.black_death_v3(env)
-    env = ss.pettingzoo_env_to_vec_env_v1(env)
 
     all_episode_rewards = []
     all_episode_lengths = []
@@ -43,7 +39,9 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
         episode_length = 0
 
         while True:
-            action, _ = model.predict(obs, deterministic=True)
+            action = model.predict(obs, deterministic=True)
+            if isinstance(action, tuple):
+                action = action[0]
 
             obs, reward, terminated, truncated, _ = env.step(action)
             episode_reward += reward[0]
@@ -51,9 +49,6 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
 
             if mode == "human":
                 time.sleep(1 / 15)
-
-            if mode == "rgb_array":
-                video_path = "temp.mp4" if video_path is None else video_path
 
             if video_path:
                 frame = env.render()
@@ -66,7 +61,6 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
             all_episode_lengths.append(episode_length)
     env.close()
     del env
-
     # Create video if path provided and frames were collected
     if video_path and frames:
         os.makedirs(os.path.dirname(video_path), exist_ok=True)
@@ -77,12 +71,18 @@ def inference(model, config, video_path=None, num_episodes=5, mode="rgb_array"):
 
 
 if __name__ == "__main__":
-    mode = "human"
-    model_path = "./models/mm1/checkpoints/ppo_model_480000_steps.zip"  # "./models/mm1/best_model/best_model.zip"
-    config = yaml.safe_load(open("configs/moving_env_marl.yaml"))
-    video_path = None  # "videos/inference_demo.mp4"
+    from rl.ppo import PPO
 
-    episode_reward, episode_length = inference(
-        model_path, config, video_path, num_episodes=5, mode=mode
-    )
+    mode = "none"  # "human"
+    model_path = "./models/test8/best_model"  # "./models/mm1/best_model/best_model.zip"
+    model = PPO.load_model(model_path)
+    config = yaml.safe_load(open("configs/basic_env.yaml"))
+    video_path = None  # "videos/inference_demo.mp4"
+    env = Environment(config, render_mode=mode)
+
+    env = ss.frame_stack_v1(env, 4)
+    env = ss.black_death_v3(env)
+    env = ss.pettingzoo_env_to_vec_env_v1(env)
+
+    episode_reward, episode_length = inference(env, model, video_path, num_episodes=5)
     print(f"Episode reward: {episode_reward}, Episode length: {episode_length}")
