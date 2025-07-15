@@ -7,11 +7,9 @@ from networks.actor_critic_network import ObservationEncoder
 from rl.ppo import PPO
 import sys
 
-# model_id = sys.argv[1]
-# config_file = sys.argv[2]
+model_id = sys.argv[1]
+config_file = sys.argv[2]
 
-model_id = "test11"
-config_file = "configs/basic_env.yaml"
 history_length = 4
 
 

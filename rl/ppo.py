@@ -1,6 +1,7 @@
 import copy
 import pickle
 import os
+import traceback
 import numpy as np
 from typing import List
 import torch.nn.functional as F
@@ -30,7 +31,7 @@ device = (
 
 
 class ActorCriticNetwork(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dim, log_std_init=-0.5):
+    def __init__(self, state_dim, action_dim, hidden_dim, log_std_init=0.0):
         super(ActorCriticNetwork, self).__init__()
         self.action_dist = DiagGaussianDistribution(action_dim)
         self.shared_layers = nn.Sequential(
@@ -47,6 +48,7 @@ class ActorCriticNetwork(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, action_dim),
+            nn.Tanh(),
         )
         # State-independent log_std (like SB3)
         self.log_std = nn.Parameter(
@@ -156,16 +158,17 @@ class PPO:
                 action = dist.sample()
             # Compute log probabilities
             log_probs = dist.log_prob(action)
-            action = action.cpu().numpy()
-            action = np.clip(action, -1, 1)
+            unclipped_action = action.cpu().numpy()
+            clipped_action = np.clip(unclipped_action, -1, 1)
 
             if return_details:
                 return (
-                    action,
+                    unclipped_action,
+                    clipped_action,
                     log_probs.clone().cpu().numpy(),
                     value.clone().cpu().numpy(),
                 )
-        return action
+        return clipped_action
 
     def collect_rollouts(self, n_rollout_steps):
         idx = 0
@@ -177,15 +180,17 @@ class PPO:
             while True:
                 idx += 1
                 self.num_steps += self.environment.num_envs
-                actions, log_probs, values = self.predict(obs, return_details=True)
+                unclipped_actions, clipped_actions, log_probs, values = self.predict(
+                    obs, return_details=True
+                )
                 next_obs, rewards, terminated, truncated, _ = self.environment.step(
-                    actions
+                    clipped_actions
                 )
                 dones = (terminated | truncated).astype(np.float32)
 
                 self.rollout_buffer.add(
                     obs,  # type: ignore[arg-type]
-                    actions,
+                    unclipped_actions,
                     rewards,
                     _last_episode_starts,
                     values,
@@ -206,7 +211,7 @@ class PPO:
                     break
 
             with torch.no_grad():
-                _, _, values = self.predict(obs, return_details=True)
+                _, _, _, values = self.predict(obs, return_details=True)
 
             self.rollout_buffer.compute_returns_and_advantage(
                 last_values=values, dones=dones
@@ -417,7 +422,13 @@ class PPO:
     def video_inference(self):
         video_path = f"{self.video_dir}/videos/inference_{self.num_steps}.mp4"
         eval_env = make_eval_env(self.eval_config, self.history_length)
-        inference(eval_env, self, num_episodes=5, video_path=video_path)
+        try:
+            inference(eval_env, self, num_episodes=5, video_path=video_path)
+        except Exception as e:
+            print(f"Error during inference: {e}")
+            print(traceback.format_exc())
+        eval_env.close()
+        del eval_env
 
     def inference_test(self, n_episodes=5):
         eval_env = make_eval_env(self.eval_config, self.history_length)

@@ -5,7 +5,7 @@ from typing import Union
 from .config_models import *
 from .utils import *
 
-OBSTACLE_NOISE = 0.0
+OBSTACLE_NOISE = 0.02
 
 
 def get_random_noise() -> float:

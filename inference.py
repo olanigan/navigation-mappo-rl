@@ -73,10 +73,10 @@ def inference(env, model, video_path=None, num_episodes=5, mode="rgb_array"):
 if __name__ == "__main__":
     from rl.ppo import PPO
 
-    mode = "none"  # "human"
-    model_path = "./models/test8/best_model"  # "./models/mm1/best_model/best_model.zip"
+    mode = "human"  # "human"
+    model_path = "./models/ppo1/best_model"  # "./models/mm1/best_model/best_model.zip"
     model = PPO.load_model(model_path)
-    config = yaml.safe_load(open("configs/basic_env.yaml"))
+    config = yaml.safe_load(open("configs/moving_env.yaml"))
     video_path = None  # "videos/inference_demo.mp4"
     env = Environment(config, render_mode=mode)
 
