@@ -15,6 +15,7 @@ class AgentState(BaseModel):
     max_range: float
     goals: Circle
     goal_reached: bool
+    last_reward: float
 
 
 class ObstacleState(BaseModel):

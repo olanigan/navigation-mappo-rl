@@ -48,6 +48,7 @@ class Agent:
         self.recent_speeds = deque(maxlen=20)
         self.old_pos = self.pos.copy()
         self.goal_threshold = goal_threshold
+        self.last_reward = 0
 
     def has_reached_goal(self):
         return np.linalg.norm(self.goal_pos - self.pos) < (
@@ -164,7 +165,9 @@ class Environment(pettingzoo.ParallelEnv):
             # Use headless mode for rgb_array to avoid showing window
             headless = render_mode == "rgb_array"
             self.window = SimulationWindow(
-                target_fps=30, record=False, headless=headless
+                target_fps=30, 
+                record=True, 
+                headless=headless
             )
 
     def preprocess_agent_configs(
@@ -464,6 +467,7 @@ class Environment(pettingzoo.ParallelEnv):
         for agent_id, collision_data in zip(self.agents, collision_datas):
             agent = self.agents_dict[agent_id]
             rewards[agent_id] = self.calculate_reward(agent, collision_data)
+            agent.last_reward = rewards[agent_id]
         # Get next observations
         observations = self._get_observations()
 
@@ -518,6 +522,7 @@ class Environment(pettingzoo.ParallelEnv):
     def close(self):
         """Close the environment."""
         if self.window is not None:
+            self.window.on_close()
             self.window.close()
             self.window = None
 
@@ -621,6 +626,7 @@ class Environment(pettingzoo.ParallelEnv):
                         radius=self.config.goal_threshold,
                     ),
                     goal_reached=agent.goal_reached,
+                    last_reward=agent.last_reward
                 )
             )
 
