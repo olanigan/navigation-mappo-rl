@@ -14,13 +14,13 @@ except ImportError:
     IMAGEIO_AVAILABLE = False
 
 # --- Theme Colors ---
-BACKGROUND_COLOR = arcade.color.BLACK
 BOUNDARY_COLOR = arcade.color.WHITE
 ARENA_COLOR = arcade.color.DIM_GRAY
-OBSTACLE_COLOR = arcade.color.LIGHT_SALMON_PINK
+BACKGROUND_COLOR = arcade.color.BLACK
+OBSTACLE_COLOR = arcade.color.LIGHT_RED_OCHRE
 OBSTACLE_BORDER_COLOR = arcade.color.BROWN
 AGENT_COLOR = arcade.color.AERO_BLUE
-AGENT_BORDER_COLOR = arcade.color.BLUE
+AGENT_BORDER_COLOR = arcade.color.WHITE
 AGENT_ARROW_COLOR = arcade.color.DARK_BLUE
 AGENT_GOAL_COLOR = arcade.color.GREEN
 
@@ -31,6 +31,11 @@ RAY_GOAL_HIT_COLOR = arcade.color.LIME_GREEN
 RAY_MISS_COLOR = arcade.color.LIGHT_STEEL_BLUE
 RAY_INTERSECTION_MARKER_COLOR = arcade.color.WHITE
 RAY_AGENT_HIT_COLOR = arcade.color.LIGHT_CORAL
+
+DRAW_RAYS = False
+RAY_ALPHA = 100
+RAY_LINE_WIDTH = 2
+DRAW_INTERSECTION_MARKERS = False
 
 
 class SimulationWindow(arcade.Window):
@@ -156,10 +161,19 @@ class SimulationWindow(arcade.Window):
                 arcade.draw_rect_filled(rect, OBSTACLE_COLOR, rotation)
                 arcade.draw_rect_outline(rect, OBSTACLE_BORDER_COLOR, 4, rotation)
 
-        if len(self.current_state.agents) < 10:
-            # --- Draw Rays (behind agents) ---
-            for agent in self.current_state.agents:
-                self._draw_agent_rays(agent)
+            elif obstacle.type == "circle":
+                x = obstacle.center.x * self.width
+                y = obstacle.center.y * self.height
+                radius = obstacle.radius * self.width
+
+                arcade.draw_circle_filled(x, y, radius, OBSTACLE_COLOR)
+                arcade.draw_circle_outline(x, y, radius, OBSTACLE_BORDER_COLOR, 4)
+
+        if DRAW_RAYS:
+            if len(self.current_state.agents) < 10:
+                # --- Draw Rays (behind agents) ---
+                for agent in self.current_state.agents:
+                    self._draw_agent_rays(agent)
 
         # --- Draw Agents (on top of rays) ---
         for agent in self.current_state.agents:
@@ -168,16 +182,34 @@ class SimulationWindow(arcade.Window):
             vX = agent.velocity[0] / 5 * self.width
             vY = agent.velocity[1] / 5 * self.height
             radius = agent.radius * self.width
-            color = getattr(arcade.color, agent.color.upper())
 
-            # Draw goal rectangle first (behind agent)
+            # Get agent colors based on config
+            if agent.color and agent.color.lower() != "none":
+                try:
+                    agent_color = getattr(arcade.color, agent.color.upper())
+                    # Create a lighter shade for goal by mixing with white
+                    goal_color = tuple(
+                        min(255, int(c * 0.7 + 255 * 0.3)) for c in agent_color[:3]
+                    )
+                except AttributeError:
+                    # Fallback to default colors if the color name is not found
+                    agent_color = AGENT_COLOR
+                    goal_color = AGENT_GOAL_COLOR[:3]
+            else:
+                # Use default colors when no color is specified
+                agent_color = AGENT_COLOR
+                goal_color = AGENT_GOAL_COLOR[:3]
+
+            agent_border_color = AGENT_BORDER_COLOR
+
+            # Draw goal circle first (behind agent)
             goal_x = agent.goals.center.x * self.width
             goal_y = agent.goals.center.y * self.height
             goal_radius = agent.goals.radius * self.width
 
             # Ensure proper color formatting
-            goal_fill_color = (*AGENT_GOAL_COLOR[:3], 100)  # RGB + alpha
-            goal_outline_color = AGENT_GOAL_COLOR[:3]  # RGB only for outline
+            goal_fill_color = (*goal_color, 100)  # RGB + alpha
+            goal_outline_color = goal_color  # RGB only for outline
 
             arcade.draw_circle_filled(
                 goal_x, goal_y, goal_radius, goal_fill_color
@@ -187,17 +219,19 @@ class SimulationWindow(arcade.Window):
             )  # Solid outline
 
             # Draw agent circle
-            arcade.draw_circle_filled(x, y, radius, AGENT_COLOR)
-            arcade.draw_circle_outline(x, y, radius, AGENT_BORDER_COLOR, 1)
+            arcade.draw_circle_filled(x, y, radius, agent_color)
+            arcade.draw_circle_outline(x, y, radius, agent_border_color, 1)
 
             # Draw velocity arrow on top
             arcade.draw_line(x, y, x + vX, y + vY, AGENT_ARROW_COLOR, 4)
 
-            self.data.append({
-                "lidar": [l.model_dump() for l in agent.lidar_observation],
-                "action": [vX, vY],
-                "reward": agent.last_reward
-            })
+            self.data.append(
+                {
+                    "lidar": [l.model_dump() for l in agent.lidar_observation],
+                    "action": [vX, vY],
+                    "reward": agent.last_reward,
+                }
+            )
         # Capture frame for recording
         if self.record:
             self._capture_frame()
@@ -236,27 +270,20 @@ class SimulationWindow(arcade.Window):
             start_x = agent.position[0] * self.width
             start_y = agent.position[1] * self.height
 
+            alpha = RAY_ALPHA
+            line_width = RAY_LINE_WIDTH
+
             # Determine ray color based on what it hit
             if ray_result.intersecting_with == "obstacle":
                 ray_color = RAY_OBSTACLE_HIT_COLOR
-                line_width = 2
-                alpha = 200
             elif ray_result.intersecting_with == "boundary":
                 ray_color = RAY_BOUNDARY_HIT_COLOR
-                line_width = 2
-                alpha = 180
             elif ray_result.intersecting_with == "goal":
                 ray_color = RAY_GOAL_HIT_COLOR
-                line_width = 3
-                alpha = 255
             elif ray_result.intersecting_with == "agent":
                 ray_color = RAY_AGENT_HIT_COLOR
-                line_width = 3
-                alpha = 255
             else:
                 ray_color = RAY_MISS_COLOR
-                line_width = 1
-                alpha = 100
 
             # Calculate end point
             if ray_result.intersection:
@@ -268,80 +295,25 @@ class SimulationWindow(arcade.Window):
                 end_x = start_x + ray_dir_x * max_range * self.width
                 end_y = start_y + ray_dir_y * max_range * self.height
 
-            # Draw the ray line
-            if ray_result.intersecting_with is None:
-                # Draw dashed line for misses
-                self._draw_dashed_line(
-                    start_x, start_y, end_x, end_y, ray_color, line_width, alpha
-                )
-            else:
-                # Draw solid line for hits
-                color_with_alpha = (*ray_color[:3], alpha)  # Ensure RGB + alpha
-                arcade.draw_line(
-                    start_x, start_y, end_x, end_y, color_with_alpha, line_width
-                )
-
-            # # Draw intersection marker
-            if ray_result.intersection:
-                marker_x = ray_result.intersection.x * self.width
-                marker_y = ray_result.intersection.y * self.height
-
-                marker_size = 2
-                arcade.draw_circle_filled(
-                    marker_x,
-                    marker_y,
-                    marker_size,
-                    RAY_INTERSECTION_MARKER_COLOR,
-                    1,
-                )
-
-    def _draw_dashed_line(
-        self, start_x, start_y, end_x, end_y, color, line_width, alpha
-    ):
-        """
-        Draw a dashed line by drawing small segments.
-        """
-        import math
-
-        # Calculate line length and direction
-        dx = end_x - start_x
-        dy = end_y - start_y
-        length = math.sqrt(dx * dx + dy * dy)
-
-        if length < 1:
-            return
-
-        # Normalize direction
-        dx /= length
-        dy /= length
-
-        # Draw dashed segments
-        dash_length = 8
-        gap_length = 4
-        current_pos = 0
-
-        while current_pos < length:
-            # Start of dash
-            dash_start_x = start_x + dx * current_pos
-            dash_start_y = start_y + dy * current_pos
-
-            # End of dash
-            dash_end_pos = min(current_pos + dash_length, length)
-            dash_end_x = start_x + dx * dash_end_pos
-            dash_end_y = start_y + dy * dash_end_pos
-            # Draw dash segment
-            color_with_alpha = (*color[:3], alpha)  # Ensure RGB + alpha
+            color_with_alpha = (*ray_color[:3], alpha)
             arcade.draw_line(
-                dash_start_x,
-                dash_start_y,
-                dash_end_x,
-                dash_end_y,
-                color_with_alpha,
-                line_width,
+                start_x, start_y, end_x, end_y, color_with_alpha, line_width
             )
 
-            # Move to next dash
-            current_pos += dash_length + gap_length
+            # # # Draw intersection marker
+            if DRAW_INTERSECTION_MARKERS:
+                if ray_result.intersection:
+                    marker_x = ray_result.intersection.x * self.width
+                    marker_y = ray_result.intersection.y * self.height
+
+                    marker_size = 2
+                    arcade.draw_circle_filled(
+                        marker_x,
+                        marker_y,
+                        marker_size,
+                        RAY_INTERSECTION_MARKER_COLOR,
+                        1,
+                    )
 
     def _capture_frame(self):
         """
@@ -372,9 +344,9 @@ class SimulationWindow(arcade.Window):
         if not self.frames:
             return
 
-        json.dump(self.data, open("movies/data/episode2.json", "w"))
-        all_frames = np.array(self.frames)
-        np.save("movies/data/frames2.npy", all_frames)
+        # json.dump(self.data, open("movies/data/episode2.json", "w"))
+        # all_frames = np.array(self.frames)
+        # np.save("movies/data/frames2.npy", all_frames)
 
         # Initialize video writer if not already done
         if self.recording_writer is None:

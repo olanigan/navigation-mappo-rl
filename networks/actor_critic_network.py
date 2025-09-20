@@ -67,22 +67,74 @@ class ObservationEncoder(BaseFeaturesExtractor):
         return self.linear(torch.cat([lidar_encoded, agent_encoded], dim=1))
 
 
+class StateEncoder(BaseFeaturesExtractor):
+    def __init__(self, state_space: spaces.Box, features_dim: int = 256):
+        super().__init__(state_space, features_dim)
+        channels, height, width = state_space.shape
+
+        self.cnn_2d = nn.Sequential(
+            nn.Conv2d(channels, 32, kernel_size=5, stride=2, padding=2),
+            nn.ReLU(),
+            nn.BatchNorm2d(32),
+            nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),  # 32x32 -> 16x16
+            nn.ReLU(),
+            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),  # 8x8 -> 4x4
+            nn.ReLU(),
+            nn.BatchNorm2d(128),
+            nn.Flatten(),
+        )
+
+        # Compute the output size of CNN
+        with torch.no_grad():
+            # Create dummy input with correct shape [batch_size, channels, height, width]
+            dummy_input = torch.zeros(1, channels, height, width)
+            cnn_output_size = self.cnn_2d(dummy_input).shape[1]
+
+        self.linear = nn.Sequential(
+            nn.Linear(cnn_output_size, features_dim),
+            nn.ReLU(),
+            # Removed the value head layers (Linear(256, 1), Tanh)
+            # This encoder should return features, not the final value
+        )
+
+    def forward(self, state: torch.Tensor) -> torch.Tensor:
+        # state = state.permute(0, 3, 1, 2)
+        cnn_output = self.cnn_2d(state)
+        return self.linear(cnn_output)
+
+
 if __name__ == "__main__":
     import numpy as np
 
-    observation_space = spaces.Box(low=0, high=1, shape=(155 * 3,), dtype=np.float32)
-    agent_states_dim = 5
-    lidar_dim = 150
-    history_length = 3
-    features_dim = 256
+    # # Test ObservationEncoder
+    # observation_space = spaces.Box(low=0, high=1, shape=(155 * 3,), dtype=np.float32)
+    # agent_states_dim = 5
+    # lidar_dim = 150
+    # history_length = 3
+    # features_dim = 256
 
-    en = ObservationEncoder(
-        observation_space,
-        agent_states_dim,
-        lidar_dim,
-        history_length,
-        features_dim,
-    )
+    # en = ObservationEncoder(
+    #     observation_space,
+    #     agent_states_dim,
+    #     lidar_dim,
+    #     history_length,
+    #     3,  # objects parameter
+    #     features_dim,
+    # )
 
-    obs = torch.as_tensor(observation_space.sample()).float()
-    print(en(obs).shape)
+    # obs = torch.as_tensor(observation_space.sample()).float()
+    # print("ObservationEncoder output shape:", en(obs).shape)
+
+    # Test StateEncoder
+    state_space = spaces.Box(low=0, high=1, shape=(11, 64, 64), dtype=np.float32)
+    state_encoder = StateEncoder(state_space, features_dim=256).to("mps")
+
+    # Test with batch dimension
+
+    # batch1 = torch.as_tensor(np.random.rand(1, 64, 64, 11)).float().to("mps")
+    # with torch.no_grad():
+    #     state_out1 = state_encoder(batch1)
+    state_batch = torch.as_tensor(np.random.rand(128, 11, 64, 64)).float().to("mps")
+    state_out = state_encoder(state_batch)
+    state_out.sum().backward()

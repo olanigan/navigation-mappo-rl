@@ -8,8 +8,8 @@ from .utils import *
 OBSTACLE_NOISE = 0.02
 
 
-def get_random_noise() -> float:
-    return np.random.uniform(-OBSTACLE_NOISE, OBSTACLE_NOISE)
+def get_random_noise(noise=OBSTACLE_NOISE) -> float:
+    return np.random.uniform(-noise, noise)
 
 
 class Obstacle(ABC):
@@ -54,15 +54,19 @@ class RectangleObstacle(Obstacle):
         self.width = shape.width
         self.height = shape.height
         self.rotation = shape.rotation
+        self.noise = config.noise if config.noise is not None else OBSTACLE_NOISE
 
     def reset(self):
         shape = self.config.shape
         self.center = shape.center.to_numpy() + np.array(
-            [get_random_noise(), get_random_noise()]
+            [get_random_noise(self.noise), get_random_noise(self.noise)]
         )
-        self.width = shape.width + get_random_noise()
-        self.height = shape.height + get_random_noise()
-        self.rotation = shape.rotation + np.random.uniform(-10, 10)
+        self.width = shape.width + get_random_noise(self.noise)
+        self.height = shape.height + get_random_noise(self.noise)
+        if self.noise == 0:
+            self.rotation = 0
+        else:
+            self.rotation = shape.rotation + np.random.uniform(-10, 10)
 
     def get_current_state(self):
         return Rectangle(
@@ -86,7 +90,7 @@ class RectangleObstacle(Obstacle):
         if self.schedule.angular_speed is not None:
             # Angular speed is in degrees per second, convert to degrees per frame
             self.rotation += (
-                self.schedule.angular_speed + get_random_noise()
+                self.schedule.angular_speed + get_random_noise(self.noise)
             ) * delta_t
 
         self._handle_boundary_conditions()
@@ -150,13 +154,14 @@ class CircleObstacle(Obstacle):
             return
         self.center = shape_config.center.to_numpy()
         self.radius = shape_config.radius
+        self.noise = config.noise
 
     def reset(self):
         shape = self.config.shape
         self.center = shape.center.to_numpy() + np.array(
-            [get_random_noise(), get_random_noise()]
+            [get_random_noise(self.noise), get_random_noise(self.noise)]
         )
-        self.radius = shape.radius + get_random_noise()
+        self.radius = shape.radius + get_random_noise(self.noise)
 
     def get_current_state(self):
         return Circle(
@@ -168,7 +173,9 @@ class CircleObstacle(Obstacle):
             return
         if self.schedule.speed is not None and self.schedule.direction is not None:
             self.center += (
-                self.schedule.direction.to_numpy() * self.schedule.speed * delta_t
+                self.schedule.direction.to_numpy()
+                * (self.schedule.speed + get_random_noise(self.noise))
+                * delta_t
             )
         self._handle_boundary_conditions()
 

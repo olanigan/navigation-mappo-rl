@@ -33,9 +33,21 @@ class AgentConfig(BaseModel):
     radius: float = 0.02
     max_speed: float
     spawn_time: float
-    agent_col: Literal["blue", "green", "yellow", "red"] = "blue"
+    agent_col: Literal[
+        "blue",
+        "green",
+        "yellow",
+        "red",
+        "purple",
+        "orange",
+        "cyan",
+        "magenta",
+        "white",
+        "black",
+    ] = "blue"
     max_range: float = 0.25
     fov_degrees: float = 210.0
+    group_encoding: List[float] = []
 
 
 class Circle(BaseModel):
@@ -57,6 +69,7 @@ class ObstacleSchedule(BaseModel):
 class ObstacleConfig(BaseModel):
     shape: Union[Rectangle, Circle]
     schedule: Optional[ObstacleSchedule] = None
+    noise: Optional[float] = None
 
 
 class PolygonBoundaryConfig(BaseModel):
@@ -66,13 +79,17 @@ class PolygonBoundaryConfig(BaseModel):
 
 class EnvConfig(BaseModel):
     boundary: PolygonBoundaryConfig
-    obstacles: List[ObstacleConfig]
+    obstacles: List[ObstacleConfig] = []
     agents: List[AgentConfig]
     max_time: int
     num_rays: int = 60
     goal_threshold: float = 0.02
-    repeat_steps: int = 4
+    repeat_steps: int = 2
     num_agents_per_group: int = 1
+    terminal_strategy: Literal["individual", "group"] = "individual"
+    use_group_encoding: bool = False
+    state_image_size: int = 32
+    use_global_information: bool = False
 
 
 if __name__ == "__main__":
