@@ -16,7 +16,6 @@ dependencies = [
     "pettingzoo>=1.25.0",
     "pydantic>=2.11.7",
     "pyyaml>=6.0.2",
-    "stable-baselines3>=2.6.0",
     "supersuit>=3.10.0",
     "tensorboard>=2.19.0",
     "torch>=2.7.1",

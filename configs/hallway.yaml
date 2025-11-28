@@ -2,7 +2,7 @@
 num_rays: 60
 goal_threshold: 0.02
 num_agents_per_group: 5
-terminal_strategy: group
+terminal_strategy: individual
 
 # Boundary configuration
 boundary:

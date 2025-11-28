@@ -2,7 +2,6 @@ import numpy as np
 import torch as th
 from gymnasium import spaces
 from typing import Optional, Generator, NamedTuple
-from stable_baselines3.common.vec_env import VecNormalize
 from typing import Union
 
 
@@ -32,7 +31,7 @@ class RolloutBuffer:
         buffer_size: int,
         observation_space: spaces.Space,
         action_space: spaces.Space,
-        state_space: spaces.Space,
+        n_agents: int,
         device: Union[th.device, str] = "mps",
         gae_lambda: float = 1,
         gamma: float = 0.99,
@@ -40,9 +39,9 @@ class RolloutBuffer:
     ):
         self.buffer_size = buffer_size
         self.obs_shape = observation_space.shape
-        self.state_shape = state_space.shape
         self.action_dim = action_space.shape[0]
         self.device = device
+        self.state_shape = (n_agents, *observation_space.shape)
         self.n_envs = n_envs
         self.gae_lambda = gae_lambda
         self.gamma = gamma

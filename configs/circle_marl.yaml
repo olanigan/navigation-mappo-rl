@@ -1,7 +1,8 @@
 # Configuration for a basic environment with 8 agents and circular obstacle
-num_rays: 60
+num_rays: 120
 goal_threshold: 0.02
 num_agents_per_group: 1
+terminal_strategy: individual
 
 # Boundary configuration
 boundary:
@@ -29,7 +30,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: red
@@ -49,7 +50,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: blue
@@ -69,7 +70,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: green
@@ -89,7 +90,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: yellow
@@ -109,7 +110,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: purple
@@ -129,7 +130,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: orange
@@ -149,7 +150,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: cyan
@@ -169,7 +170,7 @@ agents:
       height: 0.02
     radius: 0.02
     max_speed: 0.2
-    fov_degrees: 210 
+    fov_degrees: 360 
     spawn_time: 0.0
     max_range: 0.3
     agent_col: magenta

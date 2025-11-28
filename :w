@@ -1,7 +1,7 @@
 import json
 import arcade
 import time
-from arcade.color import BLACK, BLACK_BEAN, DARK_GRAY, GRAY
+from arcade.color import BLACK
 import numpy as np
 from typing import List, Optional
 from .renderer_models import RenderState, AgentState
@@ -19,7 +19,7 @@ BOUNDARY_COLOR = arcade.color.WHITE
 ARENA_COLOR = arcade.color.DIM_GRAY
 BACKGROUND_COLOR = arcade.color.BLACK
 OBSTACLE_COLOR = arcade.color.LIGHT_RED_OCHRE
-OBSTACLE_BORDER_COLOR = arcade.color.BLACK
+OBSTACLE_BORDER_COLOR = arcade.color.BROWN
 AGENT_COLOR = arcade.color.AERO_BLUE
 AGENT_BORDER_COLOR = arcade.color.WHITE
 AGENT_ARROW_COLOR = arcade.color.DARK_BLUE
@@ -285,11 +285,9 @@ class SimulationWindow(arcade.Window):
             )  # Solid outline
 
             if DRAW_AGENT_SHADOW:
-                factor = 0.1
+
                 arcade.draw_circle_filled(
-                x - (factor)*vX, 
-                    y - (factor)*vY, 
-                    radius + factor*(vY), BLACK_BEAN
+                x - (radius/4)*vX, y - (radius/4)*vY, radius, BLACK
                 )
             # Draw agent circle
             arcade.draw_circle_filled(x, y, radius, agent_color)

@@ -1,9 +1,8 @@
 # Configuration for a basic environment with one agent and obstacles
-num_rays: 60
+num_rays: 120
 goal_threshold: 0.02
-num_agents_per_group: 10
+num_agents_per_group: 8
 terminal_strategy: individual
-use_global_information: true
 
 # Boundary configuration
 boundary:
@@ -18,15 +17,15 @@ boundary:
 agents:
   - start_pos:
       center:
-        x: 0.5
+        x: 0.625
         y: 0.2
       width: 0.6
       height: 0.1
     goal_pos:
       center:
-        x: 0.5
+        x: 0.625
         y: 0.8
-      width: 0.5
+      width: 0.6
       height: 0.1
     radius: 0.015
     max_speed: 0.1
@@ -42,7 +41,7 @@ obstacles:
       center:
         x: 0.5
         y: 0.5
-      width: 0.2
+      width: 0.17
       height: 0.4
     noise: 0.0
   
@@ -51,7 +50,7 @@ obstacles:
       center:
         x: 0.25
         y: 0.5
-      width: 0.2
+      width: 0.17
       height: 0.4
     noise: 0.0
 
@@ -60,8 +59,8 @@ obstacles:
       center:
         x: 0.75
         y: 0.5
-      width: 0.2
+      width: 0.17
       height: 0.4
     noise: 0.0
 
-max_time: 1500
+max_time: 400

@@ -1,8 +1,9 @@
 # Configuration for a basic environment with 8 agents and circular obstacle
 num_rays: 60
 goal_threshold: 0.04
-num_agents_per_group: 2
-use_global_information: true
+num_agents_per_group: 4
+terminal_strategy: individual
+
 # Boundary configuration
 boundary:
   type: polygon
@@ -28,7 +29,7 @@ agents:
       width: 0.3
       height: 0.02
     radius: 0.015
-    max_speed: 0.15
+    max_speed: 0.2
     fov_degrees: 360 
     max_range: 0.5
     spawn_time: 0.0
@@ -47,7 +48,7 @@ agents:
       width: 0.3
       height: 0.02
     radius: 0.015
-    max_speed: 0.15
+    max_speed: 0.2
     fov_degrees: 360 
     max_range: 0.5
     spawn_time: 0.0
@@ -67,7 +68,7 @@ agents:
       width: 0.1
       height: 0.3
     radius: 0.015
-    max_speed: 0.15
+    max_speed: 0.2
     fov_degrees: 360 
     max_range: 0.5
     spawn_time: 0.0
@@ -86,7 +87,7 @@ agents:
       width: 0.1
       height: 0.3
     radius: 0.015
-    max_speed: 0.15
+    max_speed: 0.2
     fov_degrees: 360 
     max_range: 0.5
     spawn_time: 0.0

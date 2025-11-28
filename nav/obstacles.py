@@ -154,7 +154,7 @@ class CircleObstacle(Obstacle):
             return
         self.center = shape_config.center.to_numpy()
         self.radius = shape_config.radius
-        self.noise = config.noise
+        self.noise = config.noise if config.noise is not None else OBSTACLE_NOISE
 
     def reset(self):
         shape = self.config.shape

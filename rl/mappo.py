@@ -35,17 +35,29 @@ device = (
 class CentralizedCriticNetwork(nn.Module):
     def __init__(self, state_dim, hidden_dim=256):
         super(CentralizedCriticNetwork, self).__init__()
+        self.query = nn.Linear(state_dim, hidden_dim)
+        self.key = nn.Linear(state_dim, hidden_dim)
+        self.value = nn.Linear(state_dim, hidden_dim)
+
+        self.mha = nn.MultiheadAttention(
+            embed_dim=hidden_dim, num_heads=4, batch_first=False
+        )
+
         self.layers = nn.Sequential(
-            nn.Linear(state_dim, hidden_dim),
-            nn.Tanh(),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Tanh(),
             nn.Linear(hidden_dim, 1),
-            nn.Tanh(),
         )
 
-    def forward(self, state):
-        return self.layers(state)
+    def forward(self, n_agents, state):
+        state = state.permute(1, 0, 2)
+        query = self.query(state)
+        key = self.key(state)
+        value = self.value(state)
+
+        attn_output, _ = self.mha(query, key, value)
+        attn_output = attn_output.permute(1, 0, 2)
+        return self.layers(attn_output.mean(dim=1))
 
 
 class DecentralizedActorNetwork(nn.Module):
@@ -108,87 +120,74 @@ class MAPPO:
         self.history_length = history_length
         self.video_dir = video_dir
         self.inference_interval = inference_interval
+        self.n_agents = environment.n_agents
+        self.n_envs = environment.num_envs // self.n_agents
         os.makedirs(model_dir, exist_ok=True)
         self.save_env_yaml()
 
         self.create_network(
-            environment.state_space,
             environment.observation_space,
             environment.action_space,
             policy_kwargs,
         )
         self.config = {
-            "state_space": self.environment.state_space,
             "observation_space": self.environment.observation_space,
             "action_space": self.environment.action_space,
             "policy_kwargs": policy_kwargs,
         }
 
         # Create optimizers for both networks
+        preprocessing_params = list(self.preprocessing_layer.parameters())
         actor_params = list(self.actor_network.parameters())
         critic_params = list(self.critic_network.parameters())
-        all_params = actor_params + critic_params
+        all_params = preprocessing_params + actor_params + critic_params
         self.optimizer = optim.Adam(all_params, lr=self.lr)
 
     def create_network(
-        self, state_space, observation_space, action_space, policy_kwargs={}, **kwargs
+        self, observation_space, action_space, policy_kwargs={}, **kwargs
     ):
 
         action_dim = int(action_space.shape[0])
-        observation_dim = int(observation_space.shape[0])
-        state_dim = int(state_space.shape[0])
+        state_features_dim = policy_kwargs.get("state_features_dim", 256)
+        self.preprocessing_layer = policy_kwargs["features_extractor_class"](
+            observation_space,
+            **policy_kwargs["features_extractor_kwargs"],
+        )
+        # Instantiate the value head
+        self.critic_network = CentralizedCriticNetwork(
+            state_features_dim,
+            policy_kwargs.get("hidden_dim", 64),
+        )
 
-        if "features_extractor_class" in policy_kwargs:
-            preprocessing_layer = policy_kwargs["features_extractor_class"](
-                observation_space,
-                **policy_kwargs["features_extractor_kwargs"],
-            )
-            preprocessing_layer.to(device)
-            random_state = torch.as_tensor(
-                observation_space.sample(), device=device
-            ).unsqueeze(0)
-            out = preprocessing_layer(random_state)
-            observation_preprocessing_dim = out.shape[1]
-
-            state_preprocessing_layer = policy_kwargs["state_features_extractor_class"](
-                state_space,
-                **policy_kwargs["state_features_extractor_kwargs"],
-            )
-            state_preprocessing_layer.to(device)
-            random_state = torch.as_tensor(
-                state_space.sample(), device=device
-            ).unsqueeze(0)
-            out = state_preprocessing_layer(random_state)
-            state_preprocessing_dim = out.shape[1]
-        else:
-            raise ValueError("Features extractor class not provided")
-        actor_layer = DecentralizedActorNetwork(
-            observation_preprocessing_dim,
+        self.actor_network = DecentralizedActorNetwork(
+            state_features_dim,
             action_dim,
             policy_kwargs.get("hidden_dim", 64),
         )
-
-        # Instantiate the value head
-        critic_layer = CentralizedCriticNetwork(
-            state_preprocessing_dim,
-            policy_kwargs.get("hidden_dim", 64),
-        )
-
-        self.actor_network = nn.Sequential(
-            preprocessing_layer,
-            actor_layer,
-        )
-        self.critic_network = nn.Sequential(
-            state_preprocessing_layer,
-            critic_layer,
-        )
+        self.preprocessing_layer.to(device)
         self.actor_network.to(device)
         self.critic_network.to(device)
 
     def predict(self, observation, deterministic=False, return_details=False):
         observation = torch.from_numpy(observation).float().to(device)
         with torch.no_grad():
-            dist = self.actor_network(observation)
+            observation_encoding = self.preprocessing_layer(observation)
+            dist = self.actor_network(observation_encoding)
+
+            if return_details:
+                if not hasattr(self, 'n_envs'):
+                    self.n_envs = 1
+                if not hasattr(self, 'n_agents'):
+                    self.n_agents = observation.shape[0]
+                enc_reshaped = observation_encoding.reshape(
+                    self.n_envs, self.n_agents, -1
+                )
+                values = self.critic_network(self.n_agents, enc_reshaped)
+                values_repeated = values.repeat_interleave(repeats=self.n_agents, dim=0)
+
+                state = observation.reshape(
+                    self.n_envs, self.n_agents, -1
+                ).repeat_interleave(repeats=self.n_agents, dim=0)
 
             if deterministic:
                 action = dist.mean
@@ -204,17 +203,11 @@ class MAPPO:
                     unclipped_action,
                     clipped_action,
                     log_probs.clone().cpu().numpy(),
+                    values_repeated.clone().cpu().numpy(),
+                    state.clone().cpu().numpy(),
+                    dist.distribution
                 )
         return clipped_action
-
-    def predict_state_value(self, state):
-        state = np.stack(state)
-        state_tensor = torch.from_numpy(state).float().to(device)
-        if state_tensor.ndim == 3:
-            state_tensor = state_tensor.unsqueeze(0)
-        with torch.no_grad():
-            value = self.critic_network(state_tensor)
-        return value.clone().cpu().numpy()
 
     def collect_rollouts(self, n_rollout_steps):
         idx = 0
@@ -222,14 +215,12 @@ class MAPPO:
 
         while idx < n_rollout_steps:
             obs, infos = self.environment.reset()
-            global_states = [info["global_state"] for info in infos]
             _last_episode_starts = np.ones((self.environment.num_envs,), dtype=bool)
             while True:
                 idx += 1
                 self.num_steps += self.environment.num_envs
-                values = self.predict_state_value(global_states)
-                unclipped_actions, clipped_actions, log_probs = self.predict(
-                    obs, return_details=True
+                unclipped_actions, clipped_actions, log_probs, values, states, _ = (
+                    self.predict(obs, return_details=True)
                 )
                 next_obs, rewards, terminated, truncated, infos = self.environment.step(
                     clipped_actions
@@ -243,10 +234,9 @@ class MAPPO:
                     _last_episode_starts,
                     values,
                     log_probs,
-                    global_states,
+                    states,
                 )
                 obs = next_obs
-                global_states = [info["global_state"] for info in infos]
                 _last_episode_starts = dones
 
                 if idx % 100 == 0:
@@ -261,7 +251,7 @@ class MAPPO:
                     break
 
             with torch.no_grad():
-                values = self.predict_state_value(global_states)
+                _, _, _, values, _ = self.predict(obs, return_details=True)
 
             self.rollout_buffer.compute_returns_and_advantage(
                 last_values=values, dones=dones
@@ -273,7 +263,7 @@ class MAPPO:
             buffer_size=self.buffer_size,
             observation_space=self.environment.observation_space,
             action_space=self.environment.action_space,
-            state_space=self.environment.state_space,
+            n_agents=self.n_agents,
             device=device,
             gae_lambda=0.95,
             gamma=self.gamma,
@@ -307,14 +297,25 @@ class MAPPO:
     def compute_loss(
         self,
         observations,
-        states,
         actions,
         old_log_probs,
         advantages,
         targets,
+        states,
         clip_ratio=0.2,
     ):
-        dist = self.actor_network(observations)
+        observation_encoding = self.preprocessing_layer(observations)
+        dist = self.actor_network(observation_encoding)
+
+        batch_size = states.shape[0]
+        states_flat = states.flatten(0, 1)
+        states_encoding = self.preprocessing_layer(states_flat)
+        states_encoding_reshaped = states_encoding.reshape(
+            batch_size, self.n_agents, -1
+        )
+        predicted_state_values = self.critic_network(
+            self.n_agents, states_encoding_reshaped
+        )
 
         # Create normal distribution and compute log probabilities
         new_log_probs = dist.log_prob(actions)
@@ -324,7 +325,6 @@ class MAPPO:
         actor_loss = -torch.mean(
             torch.min(ratio * advantages, clipped_ratio * advantages)
         )
-        predicted_state_values = self.critic_network(states)
         # Critic loss (value function) - optionally add clipping for stability
         critic_loss = F.mse_loss(
             input=predicted_state_values, target=targets.unsqueeze(-1)
@@ -356,17 +356,19 @@ class MAPPO:
                 self.optimizer.zero_grad()
                 loss, metrics = self.compute_loss(
                     rollout_data.observations,
-                    rollout_data.states,
                     rollout_data.actions,
                     rollout_data.old_log_prob,
                     rollout_data.advantages,
                     rollout_data.returns,
+                    rollout_data.states,
                 )
                 loss.backward()
                 # Optional: Add gradient clipping for stability
+
+                preprocessing_params = list(self.preprocessing_layer.parameters())
                 actor_params = list(self.actor_network.parameters())
                 critic_params = list(self.critic_network.parameters())
-                all_params = actor_params + critic_params
+                all_params = preprocessing_params + actor_params + critic_params
                 torch.nn.utils.clip_grad_norm_(all_params, max_norm=0.5)
                 self.optimizer.step()
                 self.num_trains += 1
@@ -463,6 +465,7 @@ class MAPPO:
             {
                 "actor_network": self.actor_network.state_dict(),
                 "critic_network": self.critic_network.state_dict(),
+                "preprocessing_layer": self.preprocessing_layer.state_dict(),
             },
             f"{save_path}/model.pth",
         )
@@ -473,13 +476,13 @@ class MAPPO:
         print(f"Saved model to {save_path}")
 
     @classmethod
-    def load_model(cls, model_dir: str, environment=None):
+    def load_model(cls, model_dir: str):
+        print(f"Loading model from {model_dir}")
         config = pickle.load(open(f"{model_dir}/config.pkl", "rb"))
         model = MAPPO(infer=True)
-        state_space = environment.state_space()
-        config["state_space"] = state_space
         model.create_network(**config)
         checkpoint = torch.load(f"{model_dir}/model.pth")
+        model.preprocessing_layer.load_state_dict(checkpoint["preprocessing_layer"])
         model.actor_network.load_state_dict(checkpoint["actor_network"])
         model.critic_network.load_state_dict(checkpoint["critic_network"])
         return model
@@ -500,7 +503,7 @@ class MAPPO:
             video_path = f"{self.video_dir}/videos/inference_{self.num_steps}.mp4"
             eval_env = make_eval_env(self.eval_config, self.history_length)
             try:
-                inference(eval_env, self, num_episodes=1, video_path=video_path)
+                inference(eval_env, self, num_episodes=3, video_path=video_path)
             except Exception as e:
                 print(f"Error during inference: {e}")
                 print(traceback.format_exc())
@@ -511,7 +514,9 @@ class MAPPO:
             print(traceback.format_exc())
 
     def inference_test(self, n_episodes=5):
-        eval_env = make_eval_env(self.eval_config, self.history_length)
+        eval_env = make_eval_env(
+            self.eval_config, self.history_length, render_mode=None
+        )
         total_reward = 0
         for _ in range(n_episodes):
             obs, _ = eval_env.reset()

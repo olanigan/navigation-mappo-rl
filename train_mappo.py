@@ -3,11 +3,9 @@ import gymnasium as gym
 import yaml
 import supersuit as ss
 import os
-from networks.actor_critic_network import ObservationEncoder, StateEncoder
+from networks.actor_critic_network import ObservationEncoder
 from rl.mappo import MAPPO
 import sys
-from rl.vectorized_env import MarkovMultiAgentVectorEnv
-import torch
 
 model_id = sys.argv[1]
 config_file = sys.argv[2]
@@ -36,18 +34,23 @@ policy_kwargs = dict(
         history_length=history_length,
         objects=3,
     ),
-    state_features_extractor_class=StateEncoder,
-    state_features_extractor_kwargs=dict(
-        features_dim=256,
-    ),
+    state_features_output_dim=384,
 )
 
-state_space = env.state_space()
+n_agents = env.n_agents
 env = ss.frame_stack_v1(env, history_length)
 env = ss.black_death_v3(env)
-env = ss.pettingzoo_env_to_vec_env_v1(env)  # MarkovMultiAgentVectorEnv(env)
+env = ss.pettingzoo_env_to_vec_env_v1(env)
 env = ss.concat_vec_envs_v1(env, 8)
-env.state_space = state_space
+env.n_agents = n_agents
+print(env.n_agents)
+
+load_model = False
+if os.path.exists(f"models/{model_id}/best_model/model.pth"):
+    answer = input("Best model found, do you want to continue training? (y/n)")
+    if answer.lower() == "y":
+        load_model = True
+
 model = MAPPO(
     env,
     eval_config=config,
@@ -55,12 +58,15 @@ model = MAPPO(
     batch_size=128,
     policy_kwargs=policy_kwargs,
     learning_rate=5e-4,
-    inference_interval=3,
+    inference_interval=5,
     n_epochs=2,
     ent_coef=0.0,
     buffer_size=256,
     model_dir=f"models/{model_id}",
     video_dir=f"videos/{model_id}",
 )
+
+if load_model:
+    model.load_model(f"models/{model_id}/best_model")
 
 model.learn(total_timesteps=1e7)
