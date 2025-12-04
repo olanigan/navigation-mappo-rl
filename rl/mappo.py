@@ -205,7 +205,6 @@ class MAPPO:
                     log_probs.clone().cpu().numpy(),
                     values_repeated.clone().cpu().numpy(),
                     state.clone().cpu().numpy(),
-                    dist.distribution
                 )
         return clipped_action
 
@@ -219,7 +218,7 @@ class MAPPO:
             while True:
                 idx += 1
                 self.num_steps += self.environment.num_envs
-                unclipped_actions, clipped_actions, log_probs, values, states, _ = (
+                unclipped_actions, clipped_actions, log_probs, values, states = (
                     self.predict(obs, return_details=True)
                 )
                 next_obs, rewards, terminated, truncated, infos = self.environment.step(
@@ -498,20 +497,16 @@ class MAPPO:
         return mean_reward
 
     def video_inference(self):
-
+        print("Doing video inference")
+        video_path = f"{self.video_dir}/videos/inference_{self.num_steps}.mp4"
+        eval_env = make_eval_env(self.eval_config, self.history_length)
         try:
-            video_path = f"{self.video_dir}/videos/inference_{self.num_steps}.mp4"
-            eval_env = make_eval_env(self.eval_config, self.history_length)
-            try:
-                inference(eval_env, self, num_episodes=3, video_path=video_path)
-            except Exception as e:
-                print(f"Error during inference: {e}")
-                print(traceback.format_exc())
-            eval_env.close()
-            del eval_env
+            inference(eval_env, self, num_episodes=3, video_path=video_path)
         except Exception as e:
-            print(f"Error during video inference: {e}")
+            print(f"Error during inference: {e}")
             print(traceback.format_exc())
+        eval_env.close()
+        del eval_env
 
     def inference_test(self, n_episodes=5):
         eval_env = make_eval_env(

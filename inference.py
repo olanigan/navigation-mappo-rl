@@ -51,7 +51,7 @@ def inference(
         tuple: (episode_reward, episode_length)
     """
 
-
+    frames = []
     for _ in range(num_episodes):
         obs, _ = env.reset()
         while True:
@@ -67,10 +67,18 @@ def inference(
             if episode_done:
                 break
 
+            if video_path and mode == "rgb_array":
+                frame = env.render()
+                frames.append(frame)
+
             if mode == "human":
                 time.sleep(1 / 30)
 
     env.close()
+    if video_path is not None:
+        os.makedirs(os.path.dirname(video_path), exist_ok=True)
+        clip = ImageSequenceClip(frames, fps=30)
+        clip.write_videofile(video_path)
     del env
 
 if __name__ == "__main__":
@@ -93,8 +101,6 @@ if __name__ == "__main__":
     print(f"Loading environment config from {env_path}")
 
     config = yaml.safe_load(open(env_path))
-    config["terminal_strategy"] = "individual"
-    config["num_agents_per_group"] = 10
     video_path = f"movies/state_maps_fourcross.mp4"  # Path for state map videos
     env, og_env = make_eval_env(
         config,

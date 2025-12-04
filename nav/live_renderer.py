@@ -40,7 +40,7 @@ RAY_ALPHA = 80
 RAY_LINE_WIDTH = 2
 DRAW_INTERSECTION_MARKERS = True
 ANIMATE_RAYS = True
-DRAW_AGENT_SHADOW = True
+DRAW_AGENT_SHADOW = False
 
 class SimulationWindow(arcade.Window):
     """
