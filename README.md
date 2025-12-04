@@ -29,12 +29,13 @@ Patreon members also get access to a code walkthrough of this repo.
 
 -   **Python 3.10+** (required)
 -   **`uv`** (recommended) or `pip` for package management
+-   To render movies and videos, install ffmpeg
 
 ### Installation
 
 1.  **Clone the repository:**
     ```bash
-    git clone https://github.com/avbiswas/navigation-rl.git
+    git clone https://github.com/avbiswas/navigation-mappo-rl.git
     ```
 
 2.  **Install dependencies:**
