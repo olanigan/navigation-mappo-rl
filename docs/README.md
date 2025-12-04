@@ -4,6 +4,11 @@ Welcome to the documentation for the Multi-Agent Navigation project. This series
 
 ## Table of Contents
 
+0.  [**Quickstart**](00_quickstart.md)
+    *   Installation
+    *   Running the simulation
+    *   Training a model
+
 1.  [**Introduction to Reinforcement Learning**](01_introduction.md)
     *   What is RL?
     *   The Agent-Environment Loop
@@ -28,3 +33,7 @@ Welcome to the documentation for the Multi-Agent Navigation project. This series
     *   Independent PPO (IPPO)
     *   Multi-Agent PPO (MAPPO)
     *   Centralized Training, Decentralized Execution (CTDE)
+
+6.  [**Advanced Scripts**](06_advanced_scripts.md)
+    *   Building RL Environments
+    *   Advanced Scenarios
