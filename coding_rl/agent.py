@@ -6,12 +6,18 @@ class Agent:
     def __init__(self, model="gpt-3.5-turbo"):
         self.client = None
         self.model = model
-        api_key = os.getenv("OPENAI_API_KEY") or os.getenv("OPENPIPE_API_KEY")
 
-        if api_key:
-            # If using OpenPipe, you might change the base_url
-            base_url = "https://api.openpipe.ai/api/v1" if os.getenv("OPENPIPE_API_KEY") else None
-            self.client = OpenAI(api_key=api_key, base_url=base_url)
+        # Prioritize OpenPipe if available
+        openpipe_key = os.getenv("OPENPIPE_API_KEY")
+        openai_key = os.getenv("OPENAI_API_KEY")
+
+        if openpipe_key:
+            self.client = OpenAI(
+                api_key=openpipe_key,
+                base_url="https://api.openpipe.ai/api/v1"
+            )
+        elif openai_key:
+            self.client = OpenAI(api_key=openai_key)
         else:
             print("Warning: No API Key found. Agent will be mocked.")
 
